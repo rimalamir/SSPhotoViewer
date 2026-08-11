@@ -47,7 +47,7 @@ The package uses iOS 26 APIs only behind availability checks.
 Add the package repository URL in Xcode:
 
 1. Open **File → Add Package Dependencies**.
-2. Enter `https://github.com/YOUR_USERNAME/SSPhotoViewer.git`.
+2. Enter `https://github.com/rimalamir/SSPhotoViewer.git`.
 3. Select a version rule.
 4. Add the `SSPhotoViewer` product to your app target.
 
@@ -55,7 +55,7 @@ For local development, add this repository root as a local package. The root
 contains `Package.swift` and exposes the `SSPhotoViewer` library product.
 
 Example applications are available in the companion repository:
-`https://github.com/YOUR_USERNAME/SSPhotoViewerExamples`.
+`https://github.com/rimalamir/SSPhotoViewerExamples`.
 
 ```swift
 import SSPhotoViewer
