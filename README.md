@@ -9,6 +9,9 @@ grid, timeline, messages, navigation, repository, filtering, or persistence. It
 wraps that UI in the same SwiftUI hierarchy and temporarily takes ownership of
 the selected media while fullscreen.
 
+This repository contains the reusable package only. The companion demo apps
+are maintained separately in the `SSPhotoViewerExamples` repository.
+
 ## What the package supports
 
 - Remote or local image URLs.
@@ -41,15 +44,18 @@ The package uses iOS 26 APIs only behind availability checks.
 
 ## Installation
 
-Add the GitHub repository URL in Xcode:
+Add the package repository URL in Xcode:
 
 1. Open **File → Add Package Dependencies**.
-2. Enter the repository URL.
+2. Enter `https://github.com/YOUR_USERNAME/SSPhotoViewer.git`.
 3. Select a version rule.
 4. Add the `SSPhotoViewer` product to your app target.
 
 For local development, add this repository root as a local package. The root
 contains `Package.swift` and exposes the `SSPhotoViewer` library product.
+
+Example applications are available in the companion repository:
+`https://github.com/YOUR_USERNAME/SSPhotoViewerExamples`.
 
 ```swift
 import SSPhotoViewer
