@@ -12,6 +12,10 @@ the selected media while fullscreen.
 This repository contains the reusable package only. The companion demo apps
 are maintained separately in the `SSPhotoViewerExamples` repository.
 
+
+https://github.com/user-attachments/assets/5b85f7a2-6b64-4f7a-aa70-50be8611c090
+
+
 ## What the package supports
 
 - Remote or local image URLs.
