@@ -67,10 +67,17 @@ public enum SSPhotoViewerDisplayMode: Hashable, Sendable {
 }
 
 /// Controls how ``SSPhotoViewerHost`` presents the fullscreen viewer.
+///
+/// Both styles preserve the viewer's visual contract: presentation is the
+/// source-to-viewer handoff, dismissal is its reverse, and the viewer content
+/// itself does not change. The style only chooses the outer presentation
+/// boundary.
 public enum SSPhotoViewerPresentationStyle: Hashable, Sendable {
     /// Keeps the viewer in the caller's hierarchy for source-aware handoffs.
     case sameHierarchy
     /// Presents a scene-bound full-screen layer that can cover an active sheet.
+    /// The native cover owns only the outer boundary; it must not be paired with
+    /// another return-thumbnail dismissal animation.
     case fullScreen
 }
 
@@ -612,6 +619,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
     @State private var hiddenSourceID: String?
     @State private var preparingSourceID: String?
     @State private var viewerOwnsSource = false
+    @State private var fullScreenViewerOpacity: Double = 1
     @State private var openingPreparationTask: Task<Void, Never>?
 
     /// Creates a host whose selection is represented by an array index.
@@ -706,6 +714,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
             hiddenSourceID = nil
             viewerOwnsSource = false
             if presented {
+                fullScreenViewerOpacity = 1
                 beginOpeningPreparation(for: sourceID(for: selectedIndex))
             } else {
                 endOpeningPreparation()
@@ -780,9 +789,9 @@ public struct SSPhotoViewerHost<Home: View>: View {
                     // during opening, interactive dismissal, and return. The
                     // system cover must not add an opaque presentation layer.
                     .presentationBackground(.clear)
-                    // The viewer already owns the vertical dismissal gesture
-                    // and its return-hero timing.
-                    .interactiveDismissDisabled(true)
+            // The viewer owns the vertical dismissal gesture and gradual fade;
+            // native cover dismissal must not add a second media animation.
+            .interactiveDismissDisabled(true)
             }
     }
 
@@ -793,20 +802,44 @@ public struct SSPhotoViewerHost<Home: View>: View {
             selectedIndex: $selectedIndex,
             sourceFrames: sourceFrames,
             configuration: configuration,
+            usesSourceHandoff: presentationStyle == .sameHierarchy,
             onOpeningReady: {
                 endOpeningPreparation()
                 viewerOwnsSource = true
                 hiddenSourceID = sourceID(for: selectedIndex)
             },
             onDismiss: {
-                endOpeningPreparation()
-                isPresented = false
+                finishViewerDismissal()
             }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
         .ignoresSafeArea()
+        // A native full-screen cover has its own dismissal transition. Hide
+        // that layer before releasing the binding so it cannot animate a
+        // second copy of the media over the completed viewer dismissal.
+        .opacity(fullScreenViewerOpacity)
         .zIndex(100)
+    }
+
+    private func finishViewerDismissal() {
+        endOpeningPreparation()
+
+        guard presentationStyle == .fullScreen else {
+            isPresented = false
+            return
+        }
+
+        // The custom return hero has already reached the source. Restore the
+        // source before the system cover begins its unavoidable dismissal
+        // transition, then make the cover's own content transparent.
+        hiddenSourceID = nil
+        viewerOwnsSource = false
+        fullScreenViewerOpacity = 0
+
+        DispatchQueue.main.async {
+            isPresented = false
+        }
     }
 
     private func sourceID(for index: Int) -> String? {
@@ -1076,6 +1109,7 @@ private struct SSPhotoViewer: View {
     @Binding var selectedIndex: Int
     let sourceFrames: [String: CGRect]
     let configuration: SSPhotoViewerConfiguration
+    let usesSourceHandoff: Bool
     let onOpeningReady: () -> Void
     let onDismiss: () -> Void
 
@@ -1148,6 +1182,7 @@ private struct SSPhotoViewer: View {
         selectedIndex: Binding<Int>,
         sourceFrames: [String: CGRect],
         configuration: SSPhotoViewerConfiguration,
+        usesSourceHandoff: Bool,
         onOpeningReady: @escaping () -> Void,
         onDismiss: @escaping () -> Void
     ) {
@@ -1156,6 +1191,7 @@ private struct SSPhotoViewer: View {
         _selectedIndex = selectedIndex
         self.sourceFrames = sourceFrames
         self.configuration = configuration
+        self.usesSourceHandoff = usesSourceHandoff
         self.onOpeningReady = onOpeningReady
         self.onDismiss = onDismiss
         _loadedItems = State(initialValue: items)
@@ -1791,17 +1827,21 @@ private struct SSPhotoViewer: View {
 
                 if interaction == .vertical,
                    verticalDrag >= dismissalThreshold {
-                    // Preserve the exact opacity reached under the finger.
-                    // Switching to the dismissal phase must never reset the
-                    // backdrop to its initial value and flash black again.
-                    dismissalBackdropOpacity = interactiveBackdropOpacity(
-                        for: activeVerticalDrag
-                    )
-                    isDismissing = true
-                    // Capture the interactive geometry immediately. A delayed
-                    // hero leaves a visible frame where the fullscreen page has
-                    // faded but the return surface does not yet exist.
-                    beginReturn(screen: screen, frame: frame, direction: .vertical)
+                    if usesSourceHandoff {
+                        // Preserve the exact opacity reached under the finger.
+                        // Switching to the dismissal phase must never reset the
+                        // backdrop to its initial value and flash black again.
+                        dismissalBackdropOpacity = interactiveBackdropOpacity(
+                            for: activeVerticalDrag
+                        )
+                        isDismissing = true
+                        // Capture the interactive geometry immediately. A delayed
+                        // hero leaves a visible frame where the fullscreen page has
+                        // faded but the return surface does not yet exist.
+                        beginReturn(screen: screen, frame: frame, direction: .vertical)
+                    } else {
+                        beginPresentationDismissal()
+                    }
                     return
                 }
 
@@ -1919,9 +1959,34 @@ private struct SSPhotoViewer: View {
         else { return }
 
         activeVideoPlayer?.pause()
+        if usesSourceHandoff {
+            dismissalBackdropOpacity = backgroundOpacity
+            isDismissing = true
+            beginReturn(screen: screen, frame: frame, direction: .vertical)
+        } else {
+            beginPresentationDismissal()
+        }
+    }
+
+    private func beginPresentationDismissal() {
+        guard !isDismissing else { return }
+
+        // A full-screen cover already supplies the presentation transition.
+        // Fade the viewer in place, then release the cover exactly once. Do
+        // not create a second return surface inside the cover.
         dismissalBackdropOpacity = backgroundOpacity
         isDismissing = true
-        beginReturn(screen: screen, frame: frame, direction: .vertical)
+        let dismissalDuration = 0.24
+        withAnimation(.easeInOut(duration: dismissalDuration)) {
+            dismissalBackdropOpacity = 0
+            horizontalDrag = 0
+            verticalDrag = 0
+            activeVerticalDrag = 0
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + dismissalDuration) {
+            onDismiss()
+        }
     }
 
     private func toggleZoom(at location: CGPoint, screen: CGSize) {
