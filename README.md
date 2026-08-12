@@ -87,6 +87,23 @@ frame, background, safe-area inset, or container layout on that view. Place the
 host where the app owns the screen's desired size; the package expands only the
 active fullscreen viewer layer.
 
+These are visual invariants for every presentation style:
+
+- Presentation is source-to-viewer; dismissal is the same handoff in reverse.
+- The media returns to the exact selected source that opened it, when that source
+  is available. It must not jump to a different thumbnail or create a second
+  copy of the media during the handoff.
+- The backdrop fade is continuous. It must not flash, reset, or be owned by two
+  independent presentation layers.
+- The viewer's media layout, zoom, video controls, pagination strip, and chrome
+  are unchanged by the presentation container.
+- The host remains layout-neutral: no safe-area, navigation-bar, tab-bar, sheet,
+  split-view, or Stage Manager geometry is modified outside the active viewer.
+
+The presentation container may change how the viewer covers its host, but it is
+not allowed to change these visual semantics. In particular, a native
+`fullScreenCover` must not be combined with a second return-thumbnail animation.
+
 ### Choose a presentation style
 
 Use the default `.sameHierarchy` style for normal integrations. It preserves the
@@ -106,10 +123,12 @@ SSPhotoViewerHost(
 Use `.fullScreen` only when the host is already inside a sheet or another
 presentation boundary and the viewer must cover that presentation. It uses the
 scene-bound native full-screen presentation and does not manage a global
-`UIWindow`; its system presentation transition is intentional.
+`UIWindow`. The native cover owns the outer presentation boundary; the viewer
+still owns its content, opening handoff, and gradual backdrop fade.
 The cover background is transparent and its system swipe-to-dismiss is disabled
-so the viewer's shared gradual backdrop fade and return-hero animation remain
-in control.
+so there is one dismissal owner. The full-screen path fades the viewer in place
+and then releases the native cover; it does not add a second return-thumbnail
+animation inside that cover.
 
 ```swift
 SSPhotoViewerHost(
@@ -125,6 +144,8 @@ SSPhotoViewerHost(
 Do not wrap `isViewerPresented = true` in `withAnimation`. The same-hierarchy
 viewer owns its transition and uses `.transition(.identity)` to avoid a second
 animation owner. The full-screen style uses the system presentation transition.
+The two styles may differ in their outer container transition, but they must
+preserve the visual invariants above and must never change the viewer's design.
 
 ## Adapter viewer API
 

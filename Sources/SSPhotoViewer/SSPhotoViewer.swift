@@ -67,10 +67,17 @@ public enum SSPhotoViewerDisplayMode: Hashable, Sendable {
 }
 
 /// Controls how ``SSPhotoViewerHost`` presents the fullscreen viewer.
+///
+/// Both styles preserve the viewer's visual contract: presentation is the
+/// source-to-viewer handoff, dismissal is its reverse, and the viewer content
+/// itself does not change. The style only chooses the outer presentation
+/// boundary.
 public enum SSPhotoViewerPresentationStyle: Hashable, Sendable {
     /// Keeps the viewer in the caller's hierarchy for source-aware handoffs.
     case sameHierarchy
     /// Presents a scene-bound full-screen layer that can cover an active sheet.
+    /// The native cover owns only the outer boundary; it must not be paired with
+    /// another return-thumbnail dismissal animation.
     case fullScreen
 }
 
@@ -782,9 +789,9 @@ public struct SSPhotoViewerHost<Home: View>: View {
                     // during opening, interactive dismissal, and return. The
                     // system cover must not add an opaque presentation layer.
                     .presentationBackground(.clear)
-                    // The viewer already owns the vertical dismissal gesture
-                    // and its return-hero timing.
-                    .interactiveDismissDisabled(true)
+            // The viewer owns the vertical dismissal gesture and gradual fade;
+            // native cover dismissal must not add a second media animation.
+            .interactiveDismissDisabled(true)
             }
     }
 
@@ -810,7 +817,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
         .ignoresSafeArea()
         // A native full-screen cover has its own dismissal transition. Hide
         // that layer before releasing the binding so it cannot animate a
-        // second copy of the media over the custom return hero.
+        // second copy of the media over the completed viewer dismissal.
         .opacity(fullScreenViewerOpacity)
         .zIndex(100)
     }
