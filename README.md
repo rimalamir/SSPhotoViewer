@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/5b85f7a2-6b64-4f7a-aa70-50be8611c090
 ## Requirements
 
 - iOS 17 or later.
-- Swift 6 tools.
+- Swift 5.10 tools or later.
 - SwiftUI.
 - Xcode capable of building the selected iOS SDK.
 
@@ -800,6 +800,9 @@ safe-area insets.
 SSPhotoViewerStrip(
     items: items,
     selectedIndex: $selectedIndex,
+    imageLoader: { url in
+        await appImagePipeline.image(for: url)
+    },
     onRequestNextPage: loadNextPage
 )
 ```
@@ -883,6 +886,21 @@ struct DemoApp: App {
 ```
 
 Do not call it on every presentation in production.
+
+For advanced video pipelines, provide an already-configured `AVAsset` instead
+of a URL:
+
+```swift
+let asset = AVURLAsset(url: signedVideoURL)
+let item = SSPhotoViewerItem(
+    id: video.id,
+    media: .videoAsset(asset, posterURL: posterURL)
+)
+```
+
+The viewer creates and owns the `AVPlayer` lifecycle and controls. The app owns
+how the asset is constructed, including authentication or custom resource
+loading.
 
 ## Public API map
 

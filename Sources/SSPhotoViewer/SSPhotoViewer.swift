@@ -100,7 +100,7 @@ public enum SSPhotoViewerPresentationStyle: Hashable, Sendable {
 /// the media object.
 public struct SSPhotoViewerItem: Identifiable, Hashable, Sendable {
     /// The remote or local resource used for fullscreen rendering.
-    public enum Media: Hashable, Sendable {
+    public enum Media: @unchecked Sendable, Hashable {
         /// A still image resource.
         case image(URL)
         /// A video resource and an optional static poster.
@@ -108,12 +108,34 @@ public struct SSPhotoViewerItem: Identifiable, Hashable, Sendable {
         /// A poster is strongly recommended for immediate thumbnails and
         /// transition surfaces. Playback always uses the video URL.
         case video(URL, posterURL: URL? = nil)
+        /// A caller-constructed asset for authenticated or custom resource loading.
+        case videoAsset(AVAsset, posterURL: URL? = nil)
+
+        public static func == (lhs: Media, rhs: Media) -> Bool {
+            switch (lhs, rhs) {
+            case let (.image(a), .image(b)): return a == b
+            case let (.video(a, ap), .video(b, bp)): return a == b && ap == bp
+            case let (.videoAsset(a, ap), .videoAsset(b, bp)):
+                return a === b && ap == bp
+            default: return false
+            }
+        }
+
+        public func hash(into hasher: inout Hasher) {
+            switch self {
+            case .image(let url): hasher.combine(0); hasher.combine(url)
+            case .video(let url, let poster): hasher.combine(1); hasher.combine(url); hasher.combine(poster)
+            case .videoAsset(let asset, let poster): hasher.combine(2); hasher.combine(ObjectIdentifier(asset)); hasher.combine(poster)
+            }
+        }
 
         /// The URL of the full image or video resource.
-        public var sourceURL: URL {
+        public var sourceURL: URL? {
             switch self {
             case .image(let url), .video(let url, _):
                 return url
+            case .videoAsset(let asset, _):
+                return (asset as? AVURLAsset)?.url
             }
         }
 
@@ -122,6 +144,7 @@ public struct SSPhotoViewerItem: Identifiable, Hashable, Sendable {
             if case .video(_, let posterURL) = self {
                 return posterURL
             }
+            if case .videoAsset(_, let posterURL) = self { return posterURL }
             return nil
         }
 
@@ -131,7 +154,6 @@ public struct SSPhotoViewerItem: Identifiable, Hashable, Sendable {
             return .image
         }
 
-        fileprivate var url: URL { sourceURL }
         fileprivate var isVideo: Bool { kind == .video }
     }
 
@@ -181,8 +203,9 @@ public struct SSPhotoViewerItem: Identifiable, Hashable, Sendable {
         self.accessibilityLabel = accessibilityLabel
     }
 
-    /// The full image or video URL.
-    public var mediaURL: URL { media.sourceURL }
+    /// The media URL when the item uses URL-backed image/video content.
+    /// Asset-backed videos may not have a URL.
+    public var mediaURL: URL? { media.sourceURL }
 
     /// The media kind without requiring pattern matching on ``media``.
     public var mediaKind: SSPhotoViewerMediaKind { media.kind }
@@ -689,6 +712,15 @@ public struct SSPhotoViewerHost<Home: View>: View {
         configuration: SSPhotoViewerConfiguration = .init(),
         @ViewBuilder home: () -> Home
     ) {
+        #if DEBUG
+        if !items.isEmpty,
+           !items.contains(where: { $0.id == selectedID.wrappedValue }) {
+            assertionFailure(
+                "SSPhotoViewer selectedID must identify an item before presentation"
+            )
+        }
+        #endif
+
         let index = Binding<Int>(
             get: {
                 items.firstIndex(where: { $0.id == selectedID.wrappedValue }) ?? 0
@@ -926,6 +958,11 @@ public struct SSPhotoViewerStrip: View {
     /// Called when the selected item reaches the end of the current sequence.
     /// Use this to append more items in a caller-owned data source.
     public var onRequestNextPage: (() -> Void)?
+    /// App-owned image loader for URL-backed thumbnails and posters.
+    ///
+    /// The strip never performs implicit networking or caching. When this is
+    /// `nil`, URL-backed thumbnail surfaces remain placeholders.
+    public var imageLoader: SSPhotoViewerImageLoader?
 
     private let thumbnailHeight: CGFloat
     private let spacing: CGFloat
@@ -939,13 +976,15 @@ public struct SSPhotoViewerStrip: View {
         selectedIndex: Binding<Int>,
         thumbnailHeight: CGFloat = 40,
         spacing: CGFloat = 1,
-        onRequestNextPage: (() -> Void)? = nil
+        onRequestNextPage: (() -> Void)? = nil,
+        imageLoader: SSPhotoViewerImageLoader? = nil
     ) {
         self.items = items
         _selectedIndex = selectedIndex
         self.thumbnailHeight = max(1, thumbnailHeight)
         self.spacing = max(0, spacing)
         self.onRequestNextPage = onRequestNextPage
+        self.imageLoader = imageLoader
     }
 
     public var body: some View {
@@ -964,7 +1003,10 @@ public struct SSPhotoViewerStrip: View {
                                 proxy.scrollTo(item.id, anchor: .center)
                             }
                         } label: {
-                            SSPhotoViewerThumbnailSurface(item: item)
+                            SSPhotoViewerThumbnailSurface(
+                                item: item,
+                                imageLoader: imageLoader
+                            )
                                 .frame(
                                     width: thumbnailHeight * 12 / 16,
                                     height: thumbnailHeight
@@ -2138,11 +2180,11 @@ private struct SSPhotoViewer: View {
         guard let item = currentItem else { return }
 
         let destination: CGRect
-        if let captured = presentationSourceFrames[item.id],
+        if let exact = sourceFrames[item.id], exact.width > 0, exact.height > 0 {
+            destination = exact
+        } else if let captured = presentationSourceFrames[item.id],
                   captured.width > 0, captured.height > 0 {
             destination = captured
-        } else if let exact = sourceFrames[item.id], exact.width > 0, exact.height > 0 {
-            destination = exact
         } else {
             switch configuration.fallbackDestination {
             case .source:
@@ -2814,12 +2856,10 @@ private struct SSPhotoViewer: View {
             try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { return }
 
-            let nearestID = await Task.detached(priority: .userInitiated) {
-                frames.min {
-                    abs($0.value.midX - viewportWidth / 2)
-                        < abs($1.value.midX - viewportWidth / 2)
-                }?.key
-            }.value
+            let nearestID = frames.min {
+                abs($0.value.midX - viewportWidth / 2)
+                    < abs($1.value.midX - viewportWidth / 2)
+            }?.key
 
             guard !Task.isCancelled,
                   !stripIsDragging,
@@ -3269,6 +3309,12 @@ private struct SSPhotoViewerThumbnailSurface: View {
                     } else {
                         await SSPhotoViewerMediaLoader.firstVideoFrame(from: url)
                     }
+                case .videoAsset(let asset, let posterURL):
+                    image = if let posterURL {
+                        await imageLoader?(posterURL)
+                    } else {
+                        await SSPhotoViewerMediaLoader.firstVideoFrame(from: asset)
+                    }
                 }
             }
         }
@@ -3359,7 +3405,7 @@ private struct SSPhotoViewerMediaSurface: View {
                 } else {
                     placeholderColor
                 }
-            case .video:
+            case .video, .videoAsset:
                 if usesStaticVisual, let image {
                     Image(uiImage: image)
                         .resizable()
@@ -3453,6 +3499,28 @@ private struct SSPhotoViewerMediaSurface: View {
                     }
                     signalReady()
                 }
+            case .videoAsset(let asset, let posterURL):
+                let videoRatio = await SSPhotoViewerMediaLoader.videoAspectRatio(from: asset)
+                if let videoRatio { onAspectRatioReady?(videoRatio) }
+                let poster = if let previewURL = item.thumbnailURL ?? posterURL {
+                    await loadImage(from: previewURL)
+                } else {
+                    await SSPhotoViewerMediaLoader.firstVideoFrame(from: asset)
+                }
+                if let poster {
+                    image = poster
+                    if videoRatio == nil { onAspectRatioReady?(poster.size.width / poster.size.height) }
+                }
+                if usesStaticVisual {
+                    signalReady()
+                } else {
+                    let newPlayer = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+                    newPlayer.isMuted = true
+                    player = newPlayer
+                    onPlayerReady?(newPlayer)
+                    if isPlaybackEnabled { newPlayer.play() }
+                    signalReady()
+                }
             }
         }
         .onChange(of: isPlaybackEnabled) { _, isEnabled in
@@ -3533,20 +3601,23 @@ private enum SSPhotoViewerMediaLoader {
     }
 
     static func firstVideoFrame(from url: URL) async -> UIImage? {
-        let cgImage = await Task.detached(priority: .utility) {
-            let asset = AVAsset(url: url)
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            return try? generator.copyCGImage(at: .zero, actualTime: nil)
-        }.value
+        return await firstVideoFrame(from: AVURLAsset(url: url))
+    }
 
-        guard let cgImage, !Task.isCancelled else { return nil }
+    static func firstVideoFrame(from asset: AVAsset) async -> UIImage? {
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        guard let cgImage = try? generator.copyCGImage(at: .zero, actualTime: nil),
+              !Task.isCancelled else { return nil }
         return UIImage(cgImage: cgImage)
     }
 
     static func videoAspectRatio(from url: URL) async -> CGFloat? {
+        return await videoAspectRatio(from: AVURLAsset(url: url))
+    }
+
+    static func videoAspectRatio(from asset: AVAsset) async -> CGFloat? {
         do {
-            let asset = AVURLAsset(url: url)
             let tracks = try await asset.loadTracks(withMediaType: .video)
             guard let track = tracks.first else { return nil }
 
