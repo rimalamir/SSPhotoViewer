@@ -418,7 +418,22 @@ commands tied to the current viewer instance.
 For media-independent content, `topBar` and `bottomBar` accept `AnyView`. Dynamic
 builders take precedence over static bars. Set `showsDefaultTopBar` or
 `showsDefaultBottomBar` to `false` to remove package defaults without creating an
-empty view.
+empty view. When the default bottom bar is enabled,
+`showsDefaultPaginationStrip` and `showsDefaultActionBar` independently control
+its pagination strip and action controls. Video transport controls are separate
+and remain controlled by `showsVideoControls`.
+
+For example, keep video controls and pagination while removing the top bar and
+default save/share controls:
+
+```swift
+let configuration = SSPhotoViewerConfiguration(
+    showsDefaultTopBar: false,
+    showsDefaultPaginationStrip: true,
+    showsDefaultActionBar: false,
+    showsVideoControls: true
+)
+```
 
 ## Actions
 

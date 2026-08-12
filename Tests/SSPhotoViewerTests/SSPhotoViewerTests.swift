@@ -96,6 +96,8 @@ final class SSPhotoViewerTests: XCTestCase {
         XCTAssertEqual(configuration.initialDisplayMode, .minimal)
         XCTAssertTrue(configuration.showsDefaultTopBar)
         XCTAssertTrue(configuration.showsDefaultBottomBar)
+        XCTAssertTrue(configuration.showsDefaultPaginationStrip)
+        XCTAssertTrue(configuration.showsDefaultActionBar)
         XCTAssertTrue(configuration.showsVideoControls)
         XCTAssertNil(configuration.topBar)
         XCTAssertNil(configuration.bottomBar)

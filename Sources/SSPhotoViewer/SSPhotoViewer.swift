@@ -492,6 +492,15 @@ public struct SSPhotoViewerConfiguration {
     public var showsDefaultTopBar: Bool
     /// Whether the package supplies its bottom strip/actions when no custom bar exists.
     public var showsDefaultBottomBar: Bool
+    /// Whether the default bottom bar includes the pagination strip.
+    ///
+    /// This is independent of ``showsVideoControls`` and the default action
+    /// bar. The default is `true`.
+    public var showsDefaultPaginationStrip: Bool
+    /// Whether the default bottom bar includes save/share/action controls.
+    ///
+    /// The default is `true`.
+    public var showsDefaultActionBar: Bool
     /// Whether video transport controls are shown in detail mode.
     public var showsVideoControls: Bool
     /// Static media-independent top chrome.
@@ -522,6 +531,8 @@ public struct SSPhotoViewerConfiguration {
         initialDisplayMode: SSPhotoViewerDisplayMode = .minimal,
         showsDefaultTopBar: Bool = true,
         showsDefaultBottomBar: Bool = true,
+        showsDefaultPaginationStrip: Bool = true,
+        showsDefaultActionBar: Bool = true,
         showsVideoControls: Bool = true,
         topBar: AnyView? = nil,
         bottomBar: AnyView? = nil,
@@ -535,6 +546,8 @@ public struct SSPhotoViewerConfiguration {
         self.initialDisplayMode = initialDisplayMode
         self.showsDefaultTopBar = showsDefaultTopBar
         self.showsDefaultBottomBar = showsDefaultBottomBar
+        self.showsDefaultPaginationStrip = showsDefaultPaginationStrip
+        self.showsDefaultActionBar = showsDefaultActionBar
         self.showsVideoControls = showsVideoControls
         self.topBar = topBar
         self.bottomBar = bottomBar
@@ -1363,6 +1376,9 @@ private struct SSPhotoViewer: View {
             return builder(chromeContext)
         }
         if let bottomBar = configuration.bottomBar { return bottomBar }
+        guard configuration.showsDefaultPaginationStrip ||
+                configuration.showsDefaultActionBar
+        else { return nil }
         return configuration.showsDefaultBottomBar ? AnyView(defaultBottomBar) : nil
     }
 
@@ -2146,14 +2162,15 @@ private struct SSPhotoViewer: View {
 
     private var defaultBottomBar: some View {
         VStack(spacing: 0) {
-            let visualIndex = stripVisualIndex ?? selectedIndex
-            let stripItemWidth = stripIsDragging || stripIsSettling
-                ? stripMovingThumbnailWidth
-                : stripRestingThumbnailWidth
-            ScrollViewReader { proxy in
-                GeometryReader { geometry in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 1) {
+            if configuration.showsDefaultPaginationStrip {
+                let visualIndex = stripVisualIndex ?? selectedIndex
+                let stripItemWidth = stripIsDragging || stripIsSettling
+                    ? stripMovingThumbnailWidth
+                    : stripRestingThumbnailWidth
+                ScrollViewReader { proxy in
+                    GeometryReader { geometry in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: 1) {
                             Color.clear
                                 .frame(width: max(0, (geometry.size.width - stripItemWidth) / 2))
 
@@ -2205,16 +2222,16 @@ private struct SSPhotoViewer: View {
 
                             Color.clear
                                 .frame(width: max(0, (geometry.size.width - stripItemWidth) / 2))
+                            }
+                            .padding(.horizontal, 2)
                         }
-                        .padding(.horizontal, 2)
-                    }
-                    .frame(height: 40)
-                    .onAppear { stripViewportWidth = geometry.size.width }
-                    .onChange(of: geometry.size.width) { _, width in
-                        stripViewportWidth = width
-                    }
-                    .coordinateSpace(name: "ssPhotoViewerStrip")
-                    .simultaneousGesture(
+                        .frame(height: 40)
+                        .onAppear { stripViewportWidth = geometry.size.width }
+                        .onChange(of: geometry.size.width) { _, width in
+                            stripViewportWidth = width
+                        }
+                        .coordinateSpace(name: "ssPhotoViewerStrip")
+                        .simultaneousGesture(
                         // Keep ordinary taps on thumbnails out of the drag
                         // selection path. ScrollView still owns the actual
                         // high-velocity scrolling and deceleration.
@@ -2233,11 +2250,11 @@ private struct SSPhotoViewer: View {
                                     viewportWidth: geometry.size.width,
                                 )
                             }
-                    )
-                }
-                .frame(height: 40)
-                .background(Color.clear)
-                .onPreferenceChange(SSPhotoViewerStripFrameKey.self) { frames in
+                        )
+                    }
+                    .frame(height: 40)
+                    .background(Color.clear)
+                    .onPreferenceChange(SSPhotoViewerStripFrameKey.self) { frames in
                     stripFrames = frames
                     // The strip has its own scroll position. It can reach the
                     // end of the currently loaded content before the nearest
@@ -2261,12 +2278,12 @@ private struct SSPhotoViewer: View {
                         }
                     }
                 }
-                .onAppear {
-                    guard loadedItems.indices.contains(selectedIndex) else { return }
-                    stripVisualIndex = selectedIndex
-                    proxy.scrollTo(loadedItems[selectedIndex].id, anchor: .center)
-                }
-                .onChange(of: selectedIndex) { _, index in
+                    .onAppear {
+                        guard loadedItems.indices.contains(selectedIndex) else { return }
+                        stripVisualIndex = selectedIndex
+                        proxy.scrollTo(loadedItems[selectedIndex].id, anchor: .center)
+                    }
+                    .onChange(of: selectedIndex) { _, index in
                     guard loadedItems.indices.contains(index) else { return }
                     if !stripIsDragging && !stripIsSettling {
                         stripVisualIndex = index
@@ -2281,7 +2298,7 @@ private struct SSPhotoViewer: View {
                         proxy.scrollTo(loadedItems[index].id, anchor: .center)
                     }
                 }
-                .onChange(of: loadedItems.count) { _, _ in
+                    .onChange(of: loadedItems.count) { _, _ in
                     guard loadedItems.indices.contains(selectedIndex),
                           !stripIsDragging,
                           !stripIsSettling
@@ -2297,13 +2314,16 @@ private struct SSPhotoViewer: View {
                             anchor: .center
                         )
                     }
+                    }
                 }
+                .opacity(isCurrentImageZoomed ? 0 : 1)
+                .allowsHitTesting(!isCurrentImageZoomed)
+                .animation(.easeOut(duration: 0.16), value: isCurrentImageZoomed)
             }
-            .opacity(isCurrentImageZoomed ? 0 : 1)
-            .allowsHitTesting(!isCurrentImageZoomed)
-            .animation(.easeOut(duration: 0.16), value: isCurrentImageZoomed)
 
-            actionBar
+            if configuration.showsDefaultActionBar {
+                actionBar
+            }
         }
         .frame(height: 100)
         .font(.headline)
