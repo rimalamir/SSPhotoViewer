@@ -2681,6 +2681,7 @@ private struct SSPhotoViewer: View {
             usesStaticVisual: true,
             usesThumbnailVisual: true,
             imageLoader: configuration.imageLoader,
+            requiresAuthoritativeAspectRatio: true,
             onReady: {
                 guard isOpening, !openingHeroReady else { return }
 
@@ -3337,6 +3338,7 @@ private struct SSPhotoViewerMediaSurface: View {
     let usesThumbnailVisual: Bool
     let showsPlaybackControls: Bool
     let imageLoader: SSPhotoViewerImageLoader?
+    let requiresAuthoritativeAspectRatio: Bool
     var onReady: (() -> Void)? = nil
     var onPlayerReady: ((AVPlayer) -> Void)? = nil
     var onAspectRatioReady: ((CGFloat) -> Void)? = nil
@@ -3353,6 +3355,7 @@ private struct SSPhotoViewerMediaSurface: View {
         usesThumbnailVisual: Bool = false,
         showsPlaybackControls: Bool = true,
         imageLoader: SSPhotoViewerImageLoader? = nil,
+        requiresAuthoritativeAspectRatio: Bool = false,
         onReady: (() -> Void)? = nil,
         onPlayerReady: ((AVPlayer) -> Void)? = nil,
         onAspectRatioReady: ((CGFloat) -> Void)? = nil
@@ -3365,6 +3368,7 @@ private struct SSPhotoViewerMediaSurface: View {
         self.usesThumbnailVisual = usesThumbnailVisual
         self.showsPlaybackControls = showsPlaybackControls
         self.imageLoader = imageLoader
+        self.requiresAuthoritativeAspectRatio = requiresAuthoritativeAspectRatio
         self.onReady = onReady
         self.onPlayerReady = onPlayerReady
         self.onAspectRatioReady = onAspectRatioReady
@@ -3415,7 +3419,10 @@ private struct SSPhotoViewerMediaSurface: View {
                         // The preview is sufficient to establish the opening
                         // visual, but not authoritative geometry: CDN previews
                         // can be cropped or use the wrong video orientation.
-                        signalReady()
+                        if !requiresAuthoritativeAspectRatio ||
+                            item.thumbnailPreservesMediaAspectRatio {
+                            signalReady()
+                        }
                     }
 
                     if let full = await loadImage(from: url) {
@@ -3423,9 +3430,13 @@ private struct SSPhotoViewerMediaSurface: View {
                         // The fullscreen page loads and displays `full`; this
                         // surface only needs its authoritative dimensions so
                         // its container can morph to the correct destination.
-                        onAspectRatioReady?(full.size.width / full.size.height)
+                        if !item.thumbnailPreservesMediaAspectRatio {
+                            onAspectRatioReady?(full.size.width / full.size.height)
+                        }
                         if preview == nil {
                             image = full
+                            signalReady()
+                        } else if requiresAuthoritativeAspectRatio {
                             signalReady()
                         }
                     }

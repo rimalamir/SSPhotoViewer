@@ -4,6 +4,9 @@
 
 ### Changed
 
+- Prevented the opening hero from resizing after the thumbnail handoff. The
+  opening now uses an explicitly ratio-preserving thumbnail or waits for the
+  authoritative full-image geometry before animating.
 - Documented that an app-owned image loader is required for URL-backed image
   and poster content; the package intentionally provides no universal default.
 - Lowered the package tools requirement to Swift 5.10 so it can be adopted by
