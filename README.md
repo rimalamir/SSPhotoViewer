@@ -58,6 +58,10 @@ Add the package repository URL in Xcode:
 For local development, add this repository root as a local package. The root
 contains `Package.swift` and exposes the `SSPhotoViewer` library product.
 
+For the recommended app boundary, add the `SSPhotoViewerAdapter` product
+instead. App chat and gallery targets should import `SSPhotoViewerAdapter`; only
+that adapter target imports `SSPhotoViewer`.
+
 Example applications are available in the companion repository:
 `https://github.com/rimalamir/SSPhotoViewerExamples`.
 
@@ -121,6 +125,82 @@ SSPhotoViewerHost(
 Do not wrap `isViewerPresented = true` in `withAnimation`. The same-hierarchy
 viewer owns its transition and uses `.transition(.identity)` to avoid a second
 animation owner. The full-screen style uses the system presentation transition.
+
+## Consumer adapter boundary
+
+For an app with chat and gallery surfaces, keep the package dependency in one
+adapter module. Chat and gallery should import `SSPhotoViewerAdapter`, not
+`SSPhotoViewer`.
+
+```swift
+import SSPhotoViewerAdapter
+
+struct AppImage: ImageViewerAsset {
+    let imageViewerID: String
+    let imageViewerMedia: ImageViewerMedia
+    let imageViewerThumbnailURL: URL?
+    let imageViewerAccessibilityLabel: String?
+}
+```
+
+The app supplies its own asset conversion and owns the shared bindings:
+
+```swift
+struct MediaScene: View {
+    let assets: [AppImage]
+    @State private var isViewerPresented = false
+    @State private var selectedID = ""
+
+    var body: some View {
+        let adapter = ImageViewerAdapter(
+            assets: assets,
+            isPresented: $isViewerPresented,
+            selectedID: $selectedID,
+            policy: ImageViewerPresentationPolicy<AppImage>(
+                presentationStyle: .sameHierarchy,
+                showsDefaultTopBar: false,
+                showsDefaultPaginationStrip: true,
+                showsDefaultActionBar: false,
+                showsVideoControls: true
+            )
+        )
+
+        adapter.host {
+            NavigationStack {
+                GalleryView(assets: assets, adapter: adapter)
+            }
+        }
+    }
+}
+```
+
+Both chat and gallery use the same adapter instance. The adapter converts the
+asset, maps presentation policy, builds the package configuration, owns source
+registration, and writes the app-owned selection/presentation bindings:
+
+```swift
+struct GalleryView: View {
+    let assets: [AppImage]
+    let adapter: ImageViewerAdapter<AppImage>
+
+    var body: some View {
+        ForEach(assets, id: \.imageViewerID) { asset in
+            adapter.source(for: asset) {
+                AssetThumbnail(asset)
+            }
+            .onTapGesture {
+                adapter.present(asset)
+            }
+        }
+    }
+}
+```
+
+The consuming app is expected to provide stable IDs, media URLs, optional
+geometry/thumbnail metadata, and the presentation policy. The adapter is the
+only layer that should import `SSPhotoViewer` or call
+`.ssPhotoViewerSource(id:)`; app repositories, authorization, chat models,
+gallery models, and navigation remain outside the package.
 
 ### Root placement for iPhone and iPad
 
@@ -703,6 +783,10 @@ Do not call it on every presentation in production.
 ## Public API map
 
 - `SSPhotoViewerHost` — same-hierarchy composition and source ownership.
+- `SSPhotoViewerAdapter` — optional consumer boundary for app assets, policy,
+  bindings, host composition, and source registration.
+- `ImageViewerAsset` — adapter-side asset contract.
+- `ImageViewerPresentationPolicy` — adapter-side policy-to-configuration map.
 - `SSPhotoViewerItem` — stable media identity and resource metadata.
 - `SSPhotoViewerPage` — append-only pagination result.
 - `SSPhotoViewerConfiguration` — behavior and custom UI configuration.
