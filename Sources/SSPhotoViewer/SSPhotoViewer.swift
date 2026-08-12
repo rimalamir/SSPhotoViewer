@@ -619,7 +619,6 @@ public struct SSPhotoViewerHost<Home: View>: View {
     @State private var hiddenSourceID: String?
     @State private var preparingSourceID: String?
     @State private var viewerOwnsSource = false
-    @State private var fullScreenViewerOpacity: Double = 1
     @State private var openingPreparationTask: Task<Void, Never>?
 
     /// Creates a host whose selection is represented by an array index.
@@ -714,7 +713,6 @@ public struct SSPhotoViewerHost<Home: View>: View {
             hiddenSourceID = nil
             viewerOwnsSource = false
             if presented {
-                fullScreenViewerOpacity = 1
                 beginOpeningPreparation(for: sourceID(for: selectedIndex))
             } else {
                 endOpeningPreparation()
@@ -789,9 +787,14 @@ public struct SSPhotoViewerHost<Home: View>: View {
                     // during opening, interactive dismissal, and return. The
                     // system cover must not add an opaque presentation layer.
                     .presentationBackground(.clear)
-            // The viewer owns the vertical dismissal gesture and gradual fade;
-            // native cover dismissal must not add a second media animation.
-            .interactiveDismissDisabled(true)
+                    // The viewer owns the source-aware opening and dismissal
+                    // handoffs. The native cover must not add a second slide.
+                    .interactiveDismissDisabled(true)
+            }
+            // Keep the native cover as a window-covering container while
+            // leaving the visual transition to the shared viewer hero.
+            .transaction { transaction in
+                transaction.disablesAnimations = true
             }
     }
 
@@ -802,7 +805,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
             selectedIndex: $selectedIndex,
             sourceFrames: sourceFrames,
             configuration: configuration,
-            usesSourceHandoff: presentationStyle == .sameHierarchy,
+            usesSourceHandoff: true,
             onOpeningReady: {
                 endOpeningPreparation()
                 viewerOwnsSource = true
@@ -815,31 +818,13 @@ public struct SSPhotoViewerHost<Home: View>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
         .ignoresSafeArea()
-        // A native full-screen cover has its own dismissal transition. Hide
-        // that layer before releasing the binding so it cannot animate a
-        // second copy of the media over the completed viewer dismissal.
-        .opacity(fullScreenViewerOpacity)
         .zIndex(100)
     }
 
     private func finishViewerDismissal() {
         endOpeningPreparation()
 
-        guard presentationStyle == .fullScreen else {
-            isPresented = false
-            return
-        }
-
-        // The custom return hero has already reached the source. Restore the
-        // source before the system cover begins its unavoidable dismissal
-        // transition, then make the cover's own content transparent.
-        hiddenSourceID = nil
-        viewerOwnsSource = false
-        fullScreenViewerOpacity = 0
-
-        DispatchQueue.main.async {
-            isPresented = false
-        }
+        isPresented = false
     }
 
     private func sourceID(for index: Int) -> String? {
