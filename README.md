@@ -78,8 +78,11 @@ Dismissal:     fullscreen page → return hero → home source
 `SSPhotoViewerHost` keeps these layers in one SwiftUI hierarchy. A source stays
 mounted while the transition hero prepares. The package hides only the selected
 source after the hero can render it, and restores the source only after dismissal
-finishes. This is why you should not present the viewer from `.sheet` or
-`.fullScreenCover`.
+finishes. The host is an overlay around your `home` view: it does not impose a
+frame, background, safe-area inset, or container layout on that view. Place the
+host where the app owns the screen's desired size; the package expands only the
+active fullscreen viewer layer. This is why you should not present the viewer
+from `.sheet` or `.fullScreenCover`.
 
 ## Quick start
 
