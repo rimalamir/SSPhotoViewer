@@ -126,11 +126,12 @@ Do not wrap `isViewerPresented = true` in `withAnimation`. The same-hierarchy
 viewer owns its transition and uses `.transition(.identity)` to avoid a second
 animation owner. The full-screen style uses the system presentation transition.
 
-## Consumer adapter boundary
+## Adapter viewer API
 
-For an app with chat and gallery surfaces, keep the package dependency in one
-adapter module. Chat and gallery should import `SSPhotoViewerAdapter`, not
-`SSPhotoViewer`.
+`SSPhotoViewerAdapter` is the public viewer facade. Chat and gallery import this
+product directly and provide their app-owned `ImageViewerAsset` values. They do
+not create another adapter and do not import the private lower-level viewer
+target.
 
 ```swift
 import SSPhotoViewerAdapter
@@ -143,7 +144,8 @@ struct AppImage: ImageViewerAsset {
 }
 ```
 
-The app supplies its own asset conversion and owns the shared bindings:
+The app supplies its asset type and owns the shared presentation/selection
+bindings:
 
 ```swift
 struct MediaScene: View {
@@ -174,9 +176,10 @@ struct MediaScene: View {
 }
 ```
 
-Both chat and gallery use the same adapter instance. The adapter converts the
-asset, maps presentation policy, builds the package configuration, owns source
-registration, and writes the app-owned selection/presentation bindings:
+Both chat and gallery use the same `ImageViewerAdapter` instance. The adapter
+converts assets, maps presentation policy, builds the private viewer
+configuration, owns source registration, and writes the app-owned
+selection/presentation bindings:
 
 ```swift
 struct GalleryView: View {
@@ -197,10 +200,9 @@ struct GalleryView: View {
 ```
 
 The consuming app is expected to provide stable IDs, media URLs, optional
-geometry/thumbnail metadata, and the presentation policy. The adapter is the
-only layer that should import `SSPhotoViewer` or call
-`.ssPhotoViewerSource(id:)`; app repositories, authorization, chat models,
-gallery models, and navigation remain outside the package.
+geometry/thumbnail metadata, and the presentation policy. App repositories,
+authorization, chat models, gallery models, and navigation remain outside the
+package. The adapter is the only public viewer surface.
 
 ### Root placement for iPhone and iPad
 
@@ -782,24 +784,15 @@ Do not call it on every presentation in production.
 
 ## Public API map
 
-- `SSPhotoViewerHost` — same-hierarchy composition and source ownership.
-- `SSPhotoViewerAdapter` — optional consumer boundary for app assets, policy,
-  bindings, host composition, and source registration.
-- `ImageViewerAsset` — adapter-side asset contract.
-- `ImageViewerPresentationPolicy` — adapter-side policy-to-configuration map.
-- `SSPhotoViewerItem` — stable media identity and resource metadata.
-- `SSPhotoViewerPage` — append-only pagination result.
-- `SSPhotoViewerConfiguration` — behavior and custom UI configuration.
-- `SSPhotoViewerChromeContext` — dynamic chrome state and commands.
-- `SSPhotoViewerVideoControlsContext` — player state and transport commands.
-- `SSPhotoViewerAction` — application-owned semantic actions.
-- `SSPhotoViewerFallbackDestination` — no-source dismissal behavior.
-- `SSPhotoViewerDisplayMode` — minimal/detail state.
-- `SSPhotoViewerPaginationState` — pagination observability for custom chrome.
-- `SSPhotoViewerPaginationCursor` — caller-owned eager/pull synchronization.
-- `SSPhotoViewerCache` — deterministic cache reset for tests and demos.
-- `View.ssPhotoViewerSource` — source frame registration and preparation UI.
-- `EnvironmentValues.ssPhotoViewerIsZoomed` — zoom-aware custom bottom chrome.
+- `ImageViewerAdapter` — the public viewer facade and app-owned bindings.
+- `ImageViewerAsset` — the app asset contract.
+- `ImageViewerMedia` — app-facing image/video resource input.
+- `ImageViewerPresentationPolicy` — presentation, chrome, pagination, and action policy.
+- `ImageViewerPage` — app-owned pagination result.
+- `ImageViewerAction` — app-owned semantic actions.
+
+The lower-level `SSPhotoViewer` target, host, item, chrome, and source APIs are
+implementation details behind the adapter product and are not SPM products.
 
 The DocC catalog under `Sources/SSPhotoViewer/SSPhotoViewer.docc` contains the
 same contracts as focused integration guides suitable for Xcode Quick Help.
