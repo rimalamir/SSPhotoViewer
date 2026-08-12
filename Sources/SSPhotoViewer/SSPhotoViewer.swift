@@ -661,44 +661,41 @@ public struct SSPhotoViewerHost<Home: View>: View {
     }
 
     public var body: some View {
-        ZStack {
-            home
-                .environment(\.ssPhotoViewerHiddenSourceID, hiddenSourceID)
-                .environment(
-                    \.ssPhotoViewerPreparingSourceID,
-                    preparingSourceID
-                )
-
-            // Keep the viewer in the same SwiftUI hierarchy as its source.
-            // This gives the hero and the grid identical global coordinates and
-            // avoids a second UIKit presentation transition competing with the
-            // source-to-destination animation.
-            if isPresented {
-                SSPhotoViewer(
-                    items: items,
-                    paginationCursor: paginationCursor,
-                    selectedIndex: $selectedIndex,
-                    sourceFrames: sourceFrames,
-                    configuration: configuration,
-                    onOpeningReady: {
-                        endOpeningPreparation()
-                        viewerOwnsSource = true
-                        hiddenSourceID = sourceID(for: selectedIndex)
-                    },
-                    onDismiss: {
-                        endOpeningPreparation()
-                        isPresented = false
-                    }
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.clear)
-                .ignoresSafeArea()
-                .zIndex(100)
-                .transition(.identity)
+        home
+            .environment(\.ssPhotoViewerHiddenSourceID, hiddenSourceID)
+            .environment(
+                \.ssPhotoViewerPreparingSourceID,
+                preparingSourceID
+            )
+            // Keep the viewer in the same SwiftUI hierarchy as its source while
+            // making the host layout-neutral. An overlay does not change the
+            // size or safe-area placement proposed to the caller's home view.
+            // The viewer itself owns fullscreen expansion only while presented.
+            .overlay {
+                if isPresented {
+                    SSPhotoViewer(
+                        items: items,
+                        paginationCursor: paginationCursor,
+                        selectedIndex: $selectedIndex,
+                        sourceFrames: sourceFrames,
+                        configuration: configuration,
+                        onOpeningReady: {
+                            endOpeningPreparation()
+                            viewerOwnsSource = true
+                            hiddenSourceID = sourceID(for: selectedIndex)
+                        },
+                        onDismiss: {
+                            endOpeningPreparation()
+                            isPresented = false
+                        }
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.clear)
+                    .ignoresSafeArea()
+                    .zIndex(100)
+                    .transition(.identity)
+                }
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemBackground))
         .onChange(of: isPresented) { _, presented in
             // Source views stay in the hierarchy so their live frames remain
             // available for the hero transition. Only their visual layer is
