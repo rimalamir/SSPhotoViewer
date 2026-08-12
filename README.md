@@ -81,11 +81,28 @@ source after the hero can render it, and restores the source only after dismissa
 finishes. The host is an overlay around your `home` view: it does not impose a
 frame, background, safe-area inset, or container layout on that view. Place the
 host where the app owns the screen's desired size; the package expands only the
-active fullscreen viewer layer. This is why you should not present the viewer
-from `.sheet` or `.fullScreenCover`.
+active fullscreen viewer layer.
 
-Choose `presentationStyle: .fullScreen` when the host itself is inside a sheet
-or another presentation and the viewer must cover the complete scene window:
+### Choose a presentation style
+
+Use the default `.sameHierarchy` style for normal integrations. It preserves the
+source-aware hero animation, keeps the viewer in the same SwiftUI hierarchy,
+and is the recommended choice.
+
+```swift
+SSPhotoViewerHost(
+    isPresented: $isViewerPresented,
+    selectedID: $selectedID,
+    items: items
+) {
+    YourScreen()
+}
+```
+
+Use `.fullScreen` only when the host is already inside a sheet or another
+presentation boundary and the viewer must cover that presentation. It uses the
+scene-bound native full-screen presentation and does not manage a global
+`UIWindow`; its system presentation transition is intentional.
 
 ```swift
 SSPhotoViewerHost(
@@ -98,18 +115,18 @@ SSPhotoViewerHost(
 }
 ```
 
-The default `.sameHierarchy` style preserves the source-aware in-place handoff.
-The `.fullScreen` style uses the caller's scene-bound native full-screen
-presentation, so it can cover an active sheet without managing a global
-`UIWindow`. Its presentation transition is system-owned.
+Do not wrap `isViewerPresented = true` in `withAnimation`. The same-hierarchy
+viewer owns its transition and uses `.transition(.identity)` to avoid a second
+animation owner. The full-screen style uses the system presentation transition.
 
 ### Root placement for iPhone and iPad
 
-Place the host around the complete screen or scene root, above your navigation
-container. This is important for iPad `NavigationSplitView` and Stage Manager:
-the viewer can cover the sidebar and detail column only when the host overlays
-the split-view root. A host placed inside the detail column can cover only that
-column because SwiftUI does not allow a child view to draw over a sibling.
+For `.sameHierarchy`, place the host around the complete screen or scene root,
+above your navigation or tab container. This is important for iPad
+`NavigationSplitView`, `TabView`, and Stage Manager: the viewer can cover the
+sidebar, detail column, and tab bar only when the host overlays that root. A
+host placed inside a detail column or tab can cover only that child because
+SwiftUI does not allow a child view to draw over a sibling or its parent chrome.
 
 If the complete screen is already presented as a sheet, use
 `presentationStyle: .fullScreen` on the host inside that sheet when the viewer
@@ -151,7 +168,8 @@ struct MediaScene: View {
 The package remains navigation-agnostic: `Sidebar`, `Gallery`, and the
 navigation container remain application-owned. In a multiwindow or Stage
 Manager app, attach one host to each scene's root rather than managing a global
-`UIWindow` overlay.
+`UIWindow` overlay. If the screen itself is a sheet, use `.fullScreen` only for
+the viewer host inside that sheet.
 
 ## Quick start
 
@@ -201,9 +219,6 @@ struct LibraryScreen: View {
     }
 }
 ```
-
-Do not wrap `isViewerPresented = true` in `withAnimation`. The viewer owns its
-transition and uses `.transition(.identity)` to avoid a second animation owner.
 
 ## Creating media items
 
