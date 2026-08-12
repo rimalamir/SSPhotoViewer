@@ -234,6 +234,20 @@ final class SSPhotoViewerTests: XCTestCase {
         XCTAssertTrue(resolved === expected)
     }
 
+    @MainActor
+    func testStandaloneStripAcceptsTheAppOwnedImageLoaderBoundary() {
+        let item = SSPhotoViewerItem(id: "strip-photo", media: .image(imageURL))
+
+        let strip = SSPhotoViewerStrip(
+            items: [item],
+            selectedIndex: .constant(0),
+            imageLoader: { _ in UIImage() }
+        )
+
+        XCTAssertEqual(strip.items, [item])
+        XCTAssertEqual(strip.selectedIndex, 0)
+    }
+
     func testAdapterOwnsOnlySelectionWrites() {
         let state = AdapterBindingState()
         let asset = AdapterAsset(

@@ -22,6 +22,8 @@
 - Added iOS Simulator package CI for the library and test target.
 - Added a debug diagnostic for a selected ID that is not present in the viewer
   sequence instead of leaving that integration mistake silent.
+- Let the standalone thumbnail strip use the same app-owned image loader as
+  the fullscreen viewer.
 
 ### Migration
 

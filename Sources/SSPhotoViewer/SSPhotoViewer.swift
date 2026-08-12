@@ -958,6 +958,11 @@ public struct SSPhotoViewerStrip: View {
     /// Called when the selected item reaches the end of the current sequence.
     /// Use this to append more items in a caller-owned data source.
     public var onRequestNextPage: (() -> Void)?
+    /// App-owned image loader for URL-backed thumbnails and posters.
+    ///
+    /// The strip never performs implicit networking or caching. When this is
+    /// `nil`, URL-backed thumbnail surfaces remain placeholders.
+    public var imageLoader: SSPhotoViewerImageLoader?
 
     private let thumbnailHeight: CGFloat
     private let spacing: CGFloat
@@ -971,13 +976,15 @@ public struct SSPhotoViewerStrip: View {
         selectedIndex: Binding<Int>,
         thumbnailHeight: CGFloat = 40,
         spacing: CGFloat = 1,
-        onRequestNextPage: (() -> Void)? = nil
+        onRequestNextPage: (() -> Void)? = nil,
+        imageLoader: SSPhotoViewerImageLoader? = nil
     ) {
         self.items = items
         _selectedIndex = selectedIndex
         self.thumbnailHeight = max(1, thumbnailHeight)
         self.spacing = max(0, spacing)
         self.onRequestNextPage = onRequestNextPage
+        self.imageLoader = imageLoader
     }
 
     public var body: some View {
@@ -996,7 +1003,10 @@ public struct SSPhotoViewerStrip: View {
                                 proxy.scrollTo(item.id, anchor: .center)
                             }
                         } label: {
-                            SSPhotoViewerThumbnailSurface(item: item)
+                            SSPhotoViewerThumbnailSurface(
+                                item: item,
+                                imageLoader: imageLoader
+                            )
                                 .frame(
                                     width: thumbnailHeight * 12 / 16,
                                     height: thumbnailHeight

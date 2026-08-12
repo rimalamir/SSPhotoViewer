@@ -800,6 +800,9 @@ safe-area insets.
 SSPhotoViewerStrip(
     items: items,
     selectedIndex: $selectedIndex,
+    imageLoader: { url in
+        await appImagePipeline.image(for: url)
+    },
     onRequestNextPage: loadNextPage
 )
 ```
