@@ -221,6 +221,71 @@ struct GalleryView: View {
 }
 ```
 
+### Source readiness and the preparation loader
+
+Readiness belongs to the app because the app owns the thumbnail view and its
+image-loading phase. It is separate from viewer readiness: the package still
+waits for its own handoff preview and final media geometry before moving the
+hero.
+
+Report the state that matches the visual rendered by the source:
+
+```swift
+struct AssetThumbnailSource: View {
+    let asset: AppImage
+    let adapter: ImageViewerAdapter<AppImage>
+    @ObservedObject var imageLoader: ThumbnailLoader
+
+    var body: some View {
+        adapter.source(
+            for: asset,
+            readiness: imageLoader.image == nil ? .loading : .ready,
+            preparationOverlay: {
+                ProgressView()
+                    .accessibilityLabel("Loading thumbnail")
+            }
+        ) {
+            if let image = imageLoader.image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Color.secondary.opacity(0.2)
+            }
+        }
+    }
+}
+```
+
+Use the states as follows:
+
+- `.ready`: the source content is already drawable. No preparation loader is
+  shown, even when a custom `preparationOverlay` is supplied.
+- `.loading`: the source content is not drawable yet. The default spinner or
+  the supplied custom overlay is shown while the source remains mounted.
+- `.unknown`: the default for existing integrations. Use it when the app does
+  not have a trustworthy source image phase; the package behaves conservatively
+  and may show the preparation loader.
+
+Readiness must be derived from the same state that renders the source and must
+update reactively. Do not mark a placeholder as `.ready` unless that placeholder
+is the exact visual you want the opening hero to use. Do not use `.ready` to
+mean that the full-resolution viewer asset is cached; it only means the
+app-owned source visual is available.
+
+The direct package modifier has the same contract:
+
+```swift
+thumbnail
+    .ssPhotoViewerSource(
+        id: item.id,
+        readiness: thumbnailImage == nil ? .loading : .ready
+    )
+```
+
+Readiness is optional and backward-compatible. Omitting it is equivalent to
+`.unknown`.
+
 The consuming app is expected to provide stable IDs, media URLs, optional
 geometry/thumbnail metadata, and the presentation policy. App repositories,
 authorization, chat models, gallery models, and navigation remain outside the
@@ -840,19 +905,8 @@ Provide a small `thumbnailURL` and, when known, `aspectRatio`. The source remain
 visible while preview and final geometry become ready; the preparation overlay
 communicates that work without exposing a blank handoff layer.
 
-If the app already knows that the registered visual is displayed, report that
-readiness so the package does not show a redundant preparation loader:
-
-```swift
-viewer.source(for: asset, readiness: .ready) {
-    AppThumbnail(asset: asset)
-}
-```
-
-Use `.loading` while the app-owned thumbnail is still resolving and leave the
-default `.unknown` when the app cannot know. Readiness describes the source
-visual, not whether the fullscreen viewer has finished loading; the viewer
-still waits for its own hero preview before transferring ownership.
+See [Source readiness and the preparation loader](#source-readiness-and-the-preparation-loader)
+for the complete lifecycle and adapter/direct-package examples.
 
 ### The opening crop changes
 

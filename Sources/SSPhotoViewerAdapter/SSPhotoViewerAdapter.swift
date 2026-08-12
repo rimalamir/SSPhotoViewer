@@ -247,11 +247,18 @@ public struct ImageViewerAdapter<Asset: ImageViewerAsset> {
     }
 
     /// Registers exactly one app-owned visual source for handoff.
+    ///
+    /// Set `readiness` from the same state that drives `content`. Keep it
+    /// reactive: pass `.loading` while the thumbnail is unavailable and change
+    /// it to `.ready` in the next render after the thumbnail can be drawn.
+    /// `.ready` suppresses the package's preparation overlay; it does not skip
+    /// the viewer's own preview-readiness check.
     @ViewBuilder
     @MainActor
     public func source<Content: View>(
         for asset: Asset,
         isHidden: Bool = false,
+        /// Describes whether the app-owned source visual is drawable.
         readiness: SSPhotoViewerSourceReadiness = .unknown,
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -264,11 +271,16 @@ public struct ImageViewerAdapter<Asset: ImageViewerAsset> {
     }
 
     /// Registers a source with an app-owned preparation overlay.
+    ///
+    /// The overlay is used only while `readiness` is not `.ready`. The app still
+    /// owns the visual and must update readiness when that visual becomes
+    /// available.
     @ViewBuilder
     @MainActor
     public func source<Content: View, PreparationOverlay: View>(
         for asset: Asset,
         isHidden: Bool = false,
+        /// Describes whether the app-owned source visual is drawable.
         readiness: SSPhotoViewerSourceReadiness = .unknown,
         @ViewBuilder preparationOverlay: () -> PreparationOverlay,
         @ViewBuilder content: () -> Content
