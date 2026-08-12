@@ -2856,12 +2856,10 @@ private struct SSPhotoViewer: View {
             try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { return }
 
-            let nearestID = await Task.detached(priority: .userInitiated) {
-                frames.min {
-                    abs($0.value.midX - viewportWidth / 2)
-                        < abs($1.value.midX - viewportWidth / 2)
-                }?.key
-            }.value
+            let nearestID = frames.min {
+                abs($0.value.midX - viewportWidth / 2)
+                    < abs($1.value.midX - viewportWidth / 2)
+            }?.key
 
             guard !Task.isCancelled,
                   !stripIsDragging,
