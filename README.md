@@ -84,10 +84,56 @@ host where the app owns the screen's desired size; the package expands only the
 active fullscreen viewer layer. This is why you should not present the viewer
 from `.sheet` or `.fullScreenCover`.
 
+### Root placement for iPhone and iPad
+
+Place the host around the complete screen or scene root, above your navigation
+container. This is important for iPad `NavigationSplitView` and Stage Manager:
+the viewer can cover the sidebar and detail column only when the host overlays
+the split-view root. A host placed inside the detail column can cover only that
+column because SwiftUI does not allow a child view to draw over a sibling.
+
+```swift
+struct MediaScene: View {
+    @State private var isViewerPresented = false
+    @State private var selectedID = "photo-1"
+
+    let items: [SSPhotoViewerItem]
+
+    var body: some View {
+        SSPhotoViewerHost(
+            isPresented: $isViewerPresented,
+            selectedID: $selectedID,
+            items: items
+        ) {
+            #if os(iOS)
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                NavigationSplitView {
+                    Sidebar()
+                } detail: {
+                    Gallery(items: items, selectedID: $selectedID,
+                            isViewerPresented: $isViewerPresented)
+                }
+            } else {
+                NavigationStack {
+                    Gallery(items: items, selectedID: $selectedID,
+                            isViewerPresented: $isViewerPresented)
+                }
+            }
+            #endif
+        }
+    }
+}
+```
+
+The package remains navigation-agnostic: `Sidebar`, `Gallery`, and the
+navigation container remain application-owned. In a multiwindow or Stage
+Manager app, attach one host to each scene's root rather than managing a global
+`UIWindow` overlay.
+
 ## Quick start
 
-Use stable media identity, place the host around your home, and register the
-visual thumbnail as a source.
+Use stable media identity, place the host around the complete screen root, and
+register the visual thumbnail as a source.
 
 ```swift
 struct LibraryScreen: View {
