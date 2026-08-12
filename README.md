@@ -126,9 +126,10 @@ scene-bound native full-screen presentation and does not manage a global
 `UIWindow`. The native cover owns the outer presentation boundary; the viewer
 still owns its content, opening handoff, and gradual backdrop fade.
 The cover background is transparent and its system swipe-to-dismiss is disabled
-so there is one dismissal owner. The full-screen path fades the viewer in place
-and then releases the native cover; it does not add a second return-thumbnail
-animation inside that cover.
+so there is one visual transition owner. The full-screen path uses the same
+source-aware opening and return handoff as `.sameHierarchy`; the native cover
+transition itself is disabled so it cannot add a slide from below or a second
+thumbnail animation.
 
 ```swift
 SSPhotoViewerHost(
