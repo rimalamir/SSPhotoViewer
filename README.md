@@ -765,7 +765,8 @@ frame rather than the frame captured at presentation.
 
 The viewer does not render every loaded item. The fullscreen pager keeps only
 the selected page and immediate neighbors in the active page window. The strip
-uses a lazy stack, decoded images use an in-memory cache, and pagination is
+uses a lazy stack, decoded images use a memory cache backed by a bounded on-device
+disk cache, and pagination is
 append-only with an incremental ID-to-index map.
 
 For 1,000+ media items:
@@ -790,7 +791,8 @@ For 1,000+ media items:
 
 ## Cache control
 
-`SSPhotoViewerCache.reset()` clears decoded image and URL response caches. It is
+`SSPhotoViewerCache.reset()` clears decoded image, on-device image data, and URL
+response caches. It is
 intended for deterministic tests and sample apps:
 
 ```swift
@@ -837,6 +839,20 @@ source back into the mounted region or select an explicit fallback destination.
 Provide a small `thumbnailURL` and, when known, `aspectRatio`. The source remains
 visible while preview and final geometry become ready; the preparation overlay
 communicates that work without exposing a blank handoff layer.
+
+If the app already knows that the registered visual is displayed, report that
+readiness so the package does not show a redundant preparation loader:
+
+```swift
+viewer.source(for: asset, readiness: .ready) {
+    AppThumbnail(asset: asset)
+}
+```
+
+Use `.loading` while the app-owned thumbnail is still resolving and leave the
+default `.unknown` when the app cannot know. Readiness describes the source
+visual, not whether the fullscreen viewer has finished loading; the viewer
+still waits for its own hero preview before transferring ownership.
 
 ### The opening crop changes
 
