@@ -155,6 +155,10 @@ Use these configuration flags:
 
 - `showsDefaultTopBar` removes the default top bar when there is no custom one.
 - `showsDefaultBottomBar` removes the default strip/actions.
+- `showsDefaultPaginationStrip` independently removes the default pagination
+  strip while leaving default actions available.
+- `showsDefaultActionBar` independently removes default save/share/action
+  controls while leaving the pagination strip available.
 - `showsVideoControls` removes package and custom transport UI.
 - `initialDisplayMode` chooses the first minimal/detail state.
 
