@@ -1,6 +1,12 @@
 import SwiftUI
 import SSPhotoViewer
 
+/// Adapter-facing readiness contract for a registered source visual.
+///
+/// This alias keeps consuming apps on the public adapter boundary; they do not
+/// need to import the lower-level ``SSPhotoViewer`` target.
+public typealias ImageViewerSourceReadiness = SSPhotoViewerSourceReadiness
+
 /// App-facing media resources. The adapter converts these to package media.
 public enum ImageViewerMedia: Hashable, Sendable {
     case image(URL)
@@ -259,7 +265,7 @@ public struct ImageViewerAdapter<Asset: ImageViewerAsset> {
         for asset: Asset,
         isHidden: Bool = false,
         /// Describes whether the app-owned source visual is drawable.
-        readiness: SSPhotoViewerSourceReadiness = .unknown,
+        readiness: ImageViewerSourceReadiness = .unknown,
         @ViewBuilder content: () -> Content
     ) -> some View {
         content()
@@ -281,7 +287,7 @@ public struct ImageViewerAdapter<Asset: ImageViewerAsset> {
         for asset: Asset,
         isHidden: Bool = false,
         /// Describes whether the app-owned source visual is drawable.
-        readiness: SSPhotoViewerSourceReadiness = .unknown,
+        readiness: ImageViewerSourceReadiness = .unknown,
         @ViewBuilder preparationOverlay: () -> PreparationOverlay,
         @ViewBuilder content: () -> Content
     ) -> some View {

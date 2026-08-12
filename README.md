@@ -239,7 +239,9 @@ struct AssetThumbnailSource: View {
     var body: some View {
         adapter.source(
             for: asset,
-            readiness: imageLoader.image == nil ? .loading : .ready,
+            readiness: imageLoader.image == nil
+                ? .loading
+                : .ready,
             preparationOverlay: {
                 ProgressView()
                     .accessibilityLabel("Loading thumbnail")
@@ -285,6 +287,17 @@ thumbnail
 
 Readiness is optional and backward-compatible. Omitting it is equivalent to
 `.unknown`.
+
+When using `SSPhotoViewerAdapter`, the public name is
+`ImageViewerSourceReadiness`. It is a typealias for the same three-state
+contract, so an adapter consumer does not import the lower-level viewer target:
+
+```swift
+let readiness: ImageViewerSourceReadiness = .ready
+adapter.source(for: asset, readiness: readiness) {
+    AppThumbnail(asset: asset)
+}
+```
 
 The consuming app is expected to provide stable IDs, media URLs, optional
 geometry/thumbnail metadata, and the presentation policy. App repositories,
