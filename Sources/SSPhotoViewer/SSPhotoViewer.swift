@@ -795,6 +795,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
             selectedIndex: $selectedIndex,
             sourceFrames: sourceFrames,
             configuration: configuration,
+            usesSourceHandoff: presentationStyle == .sameHierarchy,
             onOpeningReady: {
                 endOpeningPreparation()
                 viewerOwnsSource = true
@@ -1101,6 +1102,7 @@ private struct SSPhotoViewer: View {
     @Binding var selectedIndex: Int
     let sourceFrames: [String: CGRect]
     let configuration: SSPhotoViewerConfiguration
+    let usesSourceHandoff: Bool
     let onOpeningReady: () -> Void
     let onDismiss: () -> Void
 
@@ -1173,6 +1175,7 @@ private struct SSPhotoViewer: View {
         selectedIndex: Binding<Int>,
         sourceFrames: [String: CGRect],
         configuration: SSPhotoViewerConfiguration,
+        usesSourceHandoff: Bool,
         onOpeningReady: @escaping () -> Void,
         onDismiss: @escaping () -> Void
     ) {
@@ -1181,6 +1184,7 @@ private struct SSPhotoViewer: View {
         _selectedIndex = selectedIndex
         self.sourceFrames = sourceFrames
         self.configuration = configuration
+        self.usesSourceHandoff = usesSourceHandoff
         self.onOpeningReady = onOpeningReady
         self.onDismiss = onDismiss
         _loadedItems = State(initialValue: items)
@@ -1816,17 +1820,21 @@ private struct SSPhotoViewer: View {
 
                 if interaction == .vertical,
                    verticalDrag >= dismissalThreshold {
-                    // Preserve the exact opacity reached under the finger.
-                    // Switching to the dismissal phase must never reset the
-                    // backdrop to its initial value and flash black again.
-                    dismissalBackdropOpacity = interactiveBackdropOpacity(
-                        for: activeVerticalDrag
-                    )
-                    isDismissing = true
-                    // Capture the interactive geometry immediately. A delayed
-                    // hero leaves a visible frame where the fullscreen page has
-                    // faded but the return surface does not yet exist.
-                    beginReturn(screen: screen, frame: frame, direction: .vertical)
+                    if usesSourceHandoff {
+                        // Preserve the exact opacity reached under the finger.
+                        // Switching to the dismissal phase must never reset the
+                        // backdrop to its initial value and flash black again.
+                        dismissalBackdropOpacity = interactiveBackdropOpacity(
+                            for: activeVerticalDrag
+                        )
+                        isDismissing = true
+                        // Capture the interactive geometry immediately. A delayed
+                        // hero leaves a visible frame where the fullscreen page has
+                        // faded but the return surface does not yet exist.
+                        beginReturn(screen: screen, frame: frame, direction: .vertical)
+                    } else {
+                        beginPresentationDismissal()
+                    }
                     return
                 }
 
@@ -1944,9 +1952,34 @@ private struct SSPhotoViewer: View {
         else { return }
 
         activeVideoPlayer?.pause()
+        if usesSourceHandoff {
+            dismissalBackdropOpacity = backgroundOpacity
+            isDismissing = true
+            beginReturn(screen: screen, frame: frame, direction: .vertical)
+        } else {
+            beginPresentationDismissal()
+        }
+    }
+
+    private func beginPresentationDismissal() {
+        guard !isDismissing else { return }
+
+        // A full-screen cover already supplies the presentation transition.
+        // Fade the viewer in place, then release the cover exactly once. Do
+        // not create a second return surface inside the cover.
         dismissalBackdropOpacity = backgroundOpacity
         isDismissing = true
-        beginReturn(screen: screen, frame: frame, direction: .vertical)
+        let dismissalDuration = 0.24
+        withAnimation(.easeInOut(duration: dismissalDuration)) {
+            dismissalBackdropOpacity = 0
+            horizontalDrag = 0
+            verticalDrag = 0
+            activeVerticalDrag = 0
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + dismissalDuration) {
+            onDismiss()
+        }
     }
 
     private func toggleZoom(at location: CGPoint, screen: CGSize) {
