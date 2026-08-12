@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import XCTest
 @testable import SSPhotoViewer
@@ -62,6 +63,19 @@ final class SSPhotoViewerTests: XCTestCase {
         XCTAssertEqual(thumbnailItem.mediaKind, .video)
         XCTAssertEqual(thumbnailItem.preferredThumbnailURL, thumbnailURL)
         XCTAssertEqual(posterItem.preferredThumbnailURL, posterURL)
+    }
+
+    func testAssetBackedVideoKeepsCustomAssetAndUsesSameMediaKind() {
+        let asset = AVURLAsset(url: videoURL)
+        let item = SSPhotoViewerItem(
+            id: "asset-video",
+            media: .videoAsset(asset, posterURL: posterURL)
+        )
+
+        XCTAssertTrue(item.isVideo)
+        XCTAssertEqual(item.mediaKind, .video)
+        XCTAssertEqual(item.mediaURL, videoURL)
+        XCTAssertEqual(item.preferredThumbnailURL, posterURL)
     }
 
     func testPosterlessVideoDoesNotPretendVideoURLIsAnImage() {
@@ -140,6 +154,7 @@ final class SSPhotoViewerTests: XCTestCase {
         XCTAssertNil(configuration.topBarBuilder)
         XCTAssertNil(configuration.bottomBarBuilder)
         XCTAssertNil(configuration.videoControlsBuilder)
+        XCTAssertNil(configuration.imageLoader)
     }
 
     func testTypedBuilderModifiersInstallEveryCustomChromeBuilder() {
@@ -206,6 +221,31 @@ final class SSPhotoViewerTests: XCTestCase {
         XCTAssertTrue(configuration.showsDefaultPaginationStrip)
         XCTAssertFalse(configuration.showsDefaultActionBar)
         XCTAssertTrue(configuration.showsVideoControls)
+    }
+
+    func testAdapterExposesTheAppOwnedImageLoaderBoundary() async {
+        let expected = UIImage()
+        let policy = ImageViewerPresentationPolicy<AdapterAsset>(
+            imageLoader: { _ in expected }
+        )
+        let configuration = policy.makeConfiguration()
+        let resolved = await configuration.imageLoader?(imageURL)
+
+        XCTAssertTrue(resolved === expected)
+    }
+
+    @MainActor
+    func testStandaloneStripAcceptsTheAppOwnedImageLoaderBoundary() {
+        let item = SSPhotoViewerItem(id: "strip-photo", media: .image(imageURL))
+
+        let strip = SSPhotoViewerStrip(
+            items: [item],
+            selectedIndex: .constant(0),
+            imageLoader: { _ in UIImage() }
+        )
+
+        XCTAssertEqual(strip.items, [item])
+        XCTAssertEqual(strip.selectedIndex, 0)
     }
 
     func testAdapterOwnsOnlySelectionWrites() {
