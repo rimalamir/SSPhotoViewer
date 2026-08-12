@@ -1,0 +1,31 @@
+name: SSPhotoViewer CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ios-package:
+    name: Build iOS package
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile library and test target
+        shell: bash
+        run: |
+          set -euo pipefail
+          simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          simulator_triple="arm64-apple-ios17.0-simulator"
+          swift build \
+            --sdk "$simulator_sdk" \
+            --triple "$simulator_triple"
+          swift build \
+            --target SSPhotoViewerTests \
+            --sdk "$simulator_sdk" \
+            --triple "$simulator_triple"
+
+      - name: Check patch whitespace
+        run: git diff --check

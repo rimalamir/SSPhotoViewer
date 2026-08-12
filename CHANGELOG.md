@@ -19,6 +19,9 @@
 - Made dismissal prefer the currently mounted source geometry, using the
   presentation snapshot only when the live source is unavailable.
 - Added regression coverage for app-owned image loading and asset-backed video.
+- Added iOS Simulator package CI for the library and test target.
+- Added a debug diagnostic for a selected ID that is not present in the viewer
+  sequence instead of leaving that integration mistake silent.
 
 ### Migration
 

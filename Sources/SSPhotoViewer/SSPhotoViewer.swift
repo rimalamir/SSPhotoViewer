@@ -712,6 +712,15 @@ public struct SSPhotoViewerHost<Home: View>: View {
         configuration: SSPhotoViewerConfiguration = .init(),
         @ViewBuilder home: () -> Home
     ) {
+        #if DEBUG
+        if !items.isEmpty,
+           !items.contains(where: { $0.id == selectedID.wrappedValue }) {
+            assertionFailure(
+                "SSPhotoViewer selectedID must identify an item before presentation"
+            )
+        }
+        #endif
+
         let index = Binding<Int>(
             get: {
                 items.firstIndex(where: { $0.id == selectedID.wrappedValue }) ?? 0
