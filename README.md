@@ -884,6 +884,21 @@ struct DemoApp: App {
 
 Do not call it on every presentation in production.
 
+For advanced video pipelines, provide an already-configured `AVAsset` instead
+of a URL:
+
+```swift
+let asset = AVURLAsset(url: signedVideoURL)
+let item = SSPhotoViewerItem(
+    id: video.id,
+    media: .videoAsset(asset, posterURL: posterURL)
+)
+```
+
+The viewer creates and owns the `AVPlayer` lifecycle and controls. The app owns
+how the asset is constructed, including authentication or custom resource
+loading.
+
 ## Public API map
 
 - `ImageViewerAdapter` — the public viewer facade and app-owned bindings.

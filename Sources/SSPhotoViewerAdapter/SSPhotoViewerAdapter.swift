@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import SSPhotoViewer
 
@@ -8,14 +9,37 @@ import SSPhotoViewer
 public typealias ImageViewerSourceReadiness = SSPhotoViewerSourceReadiness
 
 /// App-facing media resources. The adapter converts these to package media.
-public enum ImageViewerMedia: Hashable, Sendable {
+public enum ImageViewerMedia: @unchecked Sendable, Hashable {
+    /// An image URL used as identity/metadata; supply its decoded image through
+    /// the policy's app-owned image loader.
     case image(URL)
+    /// A URL-backed video. AVFoundation performs playback transport.
     case video(URL, posterURL: URL? = nil)
+    /// An app-configured asset for authentication or custom resource loading.
+    case videoAsset(AVAsset, posterURL: URL? = nil)
+
+    public static func == (lhs: ImageViewerMedia, rhs: ImageViewerMedia) -> Bool {
+        switch (lhs, rhs) {
+        case let (.image(a), .image(b)): return a == b
+        case let (.video(a, ap), .video(b, bp)): return a == b && ap == bp
+        case let (.videoAsset(a, ap), .videoAsset(b, bp)): return a === b && ap == bp
+        default: return false
+        }
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        switch self {
+        case .image(let url): hasher.combine(0); hasher.combine(url)
+        case .video(let url, let poster): hasher.combine(1); hasher.combine(url); hasher.combine(poster)
+        case .videoAsset(let asset, let poster): hasher.combine(2); hasher.combine(ObjectIdentifier(asset)); hasher.combine(poster)
+        }
+    }
 
     fileprivate var ssPhotoViewerMedia: SSPhotoViewerItem.Media {
         switch self {
         case .image(let url): .image(url)
         case .video(let url, let posterURL): .video(url, posterURL: posterURL)
+        case .videoAsset(let asset, let posterURL): .videoAsset(asset, posterURL: posterURL)
         }
     }
 }
