@@ -616,6 +616,8 @@ public struct SSPhotoViewerHost<Home: View>: View {
     private let home: Home
 
     @State private var sourceFrames: [String: CGRect] = [:]
+    @State private var presentationSourceFrames: [String: CGRect] = [:]
+    @State private var fullScreenPresentationReady = false
     @State private var hiddenSourceID: String?
     @State private var preparingSourceID: String?
     @State private var viewerOwnsSource = false
@@ -713,8 +715,11 @@ public struct SSPhotoViewerHost<Home: View>: View {
             hiddenSourceID = nil
             viewerOwnsSource = false
             if presented {
+                fullScreenPresentationReady = presentationStyle != .fullScreen
+                presentationSourceFrames = sourceFrames
                 beginOpeningPreparation(for: sourceID(for: selectedIndex))
             } else {
+                fullScreenPresentationReady = false
                 endOpeningPreparation()
             }
         }
@@ -782,7 +787,24 @@ public struct SSPhotoViewerHost<Home: View>: View {
                     endOpeningPreparation()
                 }
             ) {
-                viewerContent
+                Group {
+                    if fullScreenPresentationReady {
+                        viewerContent
+                    } else {
+                        Color.clear
+                            .ignoresSafeArea()
+                    }
+                }
+                .onAppear {
+                    // Keep the native cover's entrance visually empty. The
+                    // shared opening hero starts only after the cover has
+                    // finished moving, so the image cannot slide in from the
+                    // bottom at the same time as the thumbnail handoff.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        guard isPresented else { return }
+                        fullScreenPresentationReady = true
+                    }
+                }
                     // Let the shared viewer backdrop own the gradual fade
                     // during opening, interactive dismissal, and return. The
                     // system cover must not add an opaque presentation layer.
@@ -804,6 +826,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
             paginationCursor: paginationCursor,
             selectedIndex: $selectedIndex,
             sourceFrames: sourceFrames,
+            presentationSourceFrames: presentationSourceFrames,
             configuration: configuration,
             usesSourceHandoff: true,
             onOpeningReady: {
@@ -1093,6 +1116,7 @@ private struct SSPhotoViewer: View {
     let paginationCursor: SSPhotoViewerPaginationCursor?
     @Binding var selectedIndex: Int
     let sourceFrames: [String: CGRect]
+    let presentationSourceFrames: [String: CGRect]
     let configuration: SSPhotoViewerConfiguration
     let usesSourceHandoff: Bool
     let onOpeningReady: () -> Void
@@ -1166,6 +1190,7 @@ private struct SSPhotoViewer: View {
         paginationCursor: SSPhotoViewerPaginationCursor?,
         selectedIndex: Binding<Int>,
         sourceFrames: [String: CGRect],
+        presentationSourceFrames: [String: CGRect],
         configuration: SSPhotoViewerConfiguration,
         usesSourceHandoff: Bool,
         onOpeningReady: @escaping () -> Void,
@@ -1175,6 +1200,7 @@ private struct SSPhotoViewer: View {
         self.paginationCursor = paginationCursor
         _selectedIndex = selectedIndex
         self.sourceFrames = sourceFrames
+        self.presentationSourceFrames = presentationSourceFrames
         self.configuration = configuration
         self.usesSourceHandoff = usesSourceHandoff
         self.onOpeningReady = onOpeningReady
@@ -2067,7 +2093,10 @@ private struct SSPhotoViewer: View {
         guard let item = currentItem else { return }
 
         let destination: CGRect
-        if let exact = sourceFrames[item.id], exact.width > 0, exact.height > 0 {
+        if let captured = presentationSourceFrames[item.id],
+                  captured.width > 0, captured.height > 0 {
+            destination = captured
+        } else if let exact = sourceFrames[item.id], exact.width > 0, exact.height > 0 {
             destination = exact
         } else {
             switch configuration.fallbackDestination {
