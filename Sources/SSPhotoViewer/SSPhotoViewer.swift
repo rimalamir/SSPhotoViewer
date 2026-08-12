@@ -699,7 +699,6 @@ public struct SSPhotoViewerHost<Home: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemBackground))
-        .ignoresSafeArea(.all)
         .onChange(of: isPresented) { _, presented in
             // Source views stay in the hierarchy so their live frames remain
             // available for the hero transition. Only their visual layer is
@@ -782,6 +781,115 @@ public struct SSPhotoViewerHost<Home: View>: View {
         openingPreparationTask?.cancel()
         openingPreparationTask = nil
         preparingSourceID = nil
+    }
+}
+
+/// A reusable horizontal thumbnail strip for caller-owned gallery, message,
+/// or detail layouts.
+///
+/// The strip owns only its horizontal scrolling and selection binding. It does
+/// not ignore safe areas, add safe-area insets, present a viewer, or change the
+/// layout of its parent. Use ``SSPhotoViewerHost`` separately when a selected
+/// item should open the fullscreen viewer.
+public struct SSPhotoViewerStrip: View {
+    /// The media represented by the strip, in display order.
+    public let items: [SSPhotoViewerItem]
+    /// The selected item index. Invalid values are ignored by the strip.
+    @Binding public var selectedIndex: Int
+    /// Called when the selected item reaches the end of the current sequence.
+    /// Use this to append more items in a caller-owned data source.
+    public var onRequestNextPage: (() -> Void)?
+
+    private let thumbnailHeight: CGFloat
+    private let spacing: CGFloat
+
+    /// Creates a standalone thumbnail strip.
+    ///
+    /// The view has no fixed outer height beyond its thumbnail row and can be
+    /// placed inside any caller-owned safe-area layout.
+    public init(
+        items: [SSPhotoViewerItem],
+        selectedIndex: Binding<Int>,
+        thumbnailHeight: CGFloat = 40,
+        spacing: CGFloat = 1,
+        onRequestNextPage: (() -> Void)? = nil
+    ) {
+        self.items = items
+        _selectedIndex = selectedIndex
+        self.thumbnailHeight = max(1, thumbnailHeight)
+        self.spacing = max(0, spacing)
+        self.onRequestNextPage = onRequestNextPage
+    }
+
+    public var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: spacing) {
+                    ForEach(items.indices, id: \.self) { index in
+                        let item = items[index]
+                        Button {
+                            guard items.indices.contains(index) else { return }
+                            selectedIndex = index
+                            if index == items.index(before: items.endIndex) {
+                                onRequestNextPage?()
+                            }
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo(item.id, anchor: .center)
+                            }
+                        } label: {
+                            SSPhotoViewerThumbnailSurface(item: item)
+                                .frame(
+                                    width: thumbnailHeight * 12 / 16,
+                                    height: thumbnailHeight
+                                )
+                                .clipShape(
+                                    RoundedRectangle(
+                                        cornerRadius: 1,
+                                        style: .continuous
+                                    )
+                                )
+                                .overlay {
+                                    RoundedRectangle(
+                                        cornerRadius: 1,
+                                        style: .continuous
+                                    )
+                                    .stroke(
+                                        index == selectedIndex
+                                            ? Color.white
+                                            : Color.clear,
+                                        lineWidth: 1
+                                    )
+                                }
+                        }
+                        .id(item.id)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(
+                            item.accessibilityLabel ?? "Media \(index + 1)"
+                        )
+                        .accessibilityValue(
+                            index == selectedIndex ? "Selected" : ""
+                        )
+                        .onAppear {
+                            if index == items.index(before: items.endIndex) {
+                                onRequestNextPage?()
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .frame(height: thumbnailHeight)
+            .onAppear {
+                guard items.indices.contains(selectedIndex) else { return }
+                proxy.scrollTo(items[selectedIndex].id, anchor: .center)
+            }
+            .onChange(of: selectedIndex) { _, index in
+                guard items.indices.contains(index) else { return }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo(items[index].id, anchor: .center)
+                }
+            }
+        }
     }
 }
 
