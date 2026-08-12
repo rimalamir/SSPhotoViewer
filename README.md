@@ -498,6 +498,25 @@ The package injects `@Environment(\.ssPhotoViewerIsZoomed)` into custom bottom
 chrome. This is useful when the action bar should remain but a custom strip must
 hide while zoomed.
 
+## Standalone thumbnail strip
+
+Use `SSPhotoViewerStrip` when a gallery or message layout needs the thumbnail
+strip without fullscreen viewer ownership. It changes only the supplied
+selection binding and horizontal scroll position; it does not ignore or add
+safe-area insets.
+
+```swift
+SSPhotoViewerStrip(
+    items: items,
+    selectedIndex: $selectedIndex,
+    onRequestNextPage: loadNextPage
+)
+```
+
+The callback is invoked when the selected or visible strip item reaches the
+current end. The caller remains responsible for appending items and for
+coordinating any loading state.
+
 ## Dismissal destinations
 
 ```swift
