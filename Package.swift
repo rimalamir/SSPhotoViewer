@@ -12,22 +12,14 @@ let package = Package(
             name: "SSPhotoViewer",
             targets: ["SSPhotoViewer"]
         ),
-        .library(
-            name: "SSPhotoViewerAdapter",
-            targets: ["SSPhotoViewerAdapter"]
-        ),
     ],
     targets: [
         .target(
             name: "SSPhotoViewer"
         ),
-        .target(
-            name: "SSPhotoViewerAdapter",
-            dependencies: ["SSPhotoViewer"]
-        ),
         .testTarget(
             name: "SSPhotoViewerTests",
-            dependencies: ["SSPhotoViewer", "SSPhotoViewerAdapter"]
+            dependencies: ["SSPhotoViewer"]
         )
     ]
 )

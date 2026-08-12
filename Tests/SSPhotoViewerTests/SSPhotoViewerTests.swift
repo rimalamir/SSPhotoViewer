@@ -1,7 +1,6 @@
 import SwiftUI
 import XCTest
 @testable import SSPhotoViewer
-@testable import SSPhotoViewerAdapter
 
 final class SSPhotoViewerTests: XCTestCase {
     private let imageURL = URL(string: "https://example.com/full.jpg")!
@@ -9,17 +8,6 @@ final class SSPhotoViewerTests: XCTestCase {
     private let thumbnailURL = URL(string: "https://example.com/thumb.jpg")!
     private let posterURL = URL(string: "https://example.com/poster.jpg")!
 
-    private struct AdapterAsset: ImageViewerAsset {
-        let imageViewerID: String
-        let imageViewerMedia: ImageViewerMedia
-        var imageViewerThumbnailURL: URL? = nil
-        var imageViewerAccessibilityLabel: String? = nil
-    }
-
-    private final class AdapterBindingState: @unchecked Sendable {
-        var isPresented = false
-        var selectedID = ""
-    }
 
     func testImageItemExposesStablePublicMediaMetadata() {
         let item = SSPhotoViewerItem(
@@ -151,61 +139,4 @@ final class SSPhotoViewerTests: XCTestCase {
         )
     }
 
-    func testAdapterConvertsAppAssetAtTheBoundary() {
-        let asset = AdapterAsset(
-            imageViewerID: "chat-photo",
-            imageViewerMedia: .image(imageURL),
-            imageViewerThumbnailURL: thumbnailURL,
-            imageViewerAccessibilityLabel: "Chat photo"
-        )
-
-        let item = asset.ssPhotoViewerItem
-
-        XCTAssertEqual(item.id, "chat-photo")
-        XCTAssertEqual(item.mediaURL, imageURL)
-        XCTAssertEqual(item.preferredThumbnailURL, thumbnailURL)
-        XCTAssertEqual(item.accessibilityLabel, "Chat photo")
-    }
-
-    func testAdapterPolicyBuildsIndependentViewerConfiguration() {
-        let policy = ImageViewerPresentationPolicy<AdapterAsset>(
-            presentationStyle: .fullScreen,
-            showsDefaultTopBar: false,
-            showsDefaultPaginationStrip: true,
-            showsDefaultActionBar: false,
-            showsVideoControls: true
-        )
-
-        let configuration = policy.makeConfiguration()
-
-        XCTAssertEqual(policy.presentationStyle, .fullScreen)
-        XCTAssertFalse(configuration.showsDefaultTopBar)
-        XCTAssertTrue(configuration.showsDefaultPaginationStrip)
-        XCTAssertFalse(configuration.showsDefaultActionBar)
-        XCTAssertTrue(configuration.showsVideoControls)
-    }
-
-    func testAdapterOwnsOnlySelectionWrites() {
-        let state = AdapterBindingState()
-        let asset = AdapterAsset(
-            imageViewerID: "gallery-photo",
-            imageViewerMedia: .image(imageURL)
-        )
-        let adapter = ImageViewerAdapter(
-            assets: [asset],
-            isPresented: Binding(
-                get: { state.isPresented },
-                set: { state.isPresented = $0 }
-            ),
-            selectedID: Binding(
-                get: { state.selectedID },
-                set: { state.selectedID = $0 }
-            )
-        )
-
-        adapter.present(asset)
-
-        XCTAssertEqual(state.selectedID, "gallery-photo")
-        XCTAssertTrue(state.isPresented)
-    }
 }

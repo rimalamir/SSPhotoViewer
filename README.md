@@ -58,10 +58,6 @@ Add the package repository URL in Xcode:
 For local development, add this repository root as a local package. The root
 contains `Package.swift` and exposes the `SSPhotoViewer` library product.
 
-For the recommended app boundary, add the `SSPhotoViewerAdapter` product
-instead. App chat and gallery targets should import `SSPhotoViewerAdapter`; only
-that adapter target imports `SSPhotoViewer`.
-
 Example applications are available in the companion repository:
 `https://github.com/rimalamir/SSPhotoViewerExamples`.
 
@@ -128,16 +124,19 @@ animation owner. The full-screen style uses the system presentation transition.
 
 ## Consumer adapter boundary
 
-For an app with chat and gallery surfaces, keep the package dependency in one
-adapter module. Chat and gallery should import `SSPhotoViewerAdapter`, not
-`SSPhotoViewer`.
+For an app with chat and gallery surfaces, create one app-owned
+`ImageViewerAdapter.swift` module. That adapter imports `SSPhotoViewer`; chat
+and gallery import the app adapter module, not `SSPhotoViewer`. The adapter is
+not a second library product and should live next to the app's presentation
+policy and asset models.
 
 ```swift
-import SSPhotoViewerAdapter
+// App adapter module: ImageViewerAdapter.swift
+import SSPhotoViewer
 
 struct AppImage: ImageViewerAsset {
     let imageViewerID: String
-    let imageViewerMedia: ImageViewerMedia
+    let imageViewerMedia: ImageViewerMedia // app-owned adapter type
     let imageViewerThumbnailURL: URL?
     let imageViewerAccessibilityLabel: String?
 }
@@ -181,7 +180,7 @@ registration, and writes the app-owned selection/presentation bindings:
 ```swift
 struct GalleryView: View {
     let assets: [AppImage]
-    let adapter: ImageViewerAdapter<AppImage>
+    let adapter: ImageViewerAdapter<AppImage> // app-owned adapter type
 
     var body: some View {
         ForEach(assets, id: \.imageViewerID) { asset in
@@ -198,7 +197,7 @@ struct GalleryView: View {
 
 The consuming app is expected to provide stable IDs, media URLs, optional
 geometry/thumbnail metadata, and the presentation policy. The adapter is the
-only layer that should import `SSPhotoViewer` or call
+only app layer that should import `SSPhotoViewer` or call
 `.ssPhotoViewerSource(id:)`; app repositories, authorization, chat models,
 gallery models, and navigation remain outside the package.
 
@@ -783,10 +782,6 @@ Do not call it on every presentation in production.
 ## Public API map
 
 - `SSPhotoViewerHost` — same-hierarchy composition and source ownership.
-- `SSPhotoViewerAdapter` — optional consumer boundary for app assets, policy,
-  bindings, host composition, and source registration.
-- `ImageViewerAsset` — adapter-side asset contract.
-- `ImageViewerPresentationPolicy` — adapter-side policy-to-configuration map.
 - `SSPhotoViewerItem` — stable media identity and resource metadata.
 - `SSPhotoViewerPage` — append-only pagination result.
 - `SSPhotoViewerConfiguration` — behavior and custom UI configuration.
