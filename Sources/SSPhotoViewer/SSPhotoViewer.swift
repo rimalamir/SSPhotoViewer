@@ -1,5 +1,6 @@
 import AVFoundation
 import AVKit
+import CryptoKit
 import ImageIO
 import SwiftUI
 import UIKit
@@ -64,6 +65,16 @@ public enum SSPhotoViewerDisplayMode: Hashable, Sendable {
     case minimal
     /// Media plus the configured auxiliary controls and information.
     case detail
+}
+
+/// Readiness reported by the app-owned visual registered for a handoff.
+public enum SSPhotoViewerSourceReadiness: Hashable, Sendable {
+    /// The source has not reported whether its visual is ready.
+    case unknown
+    /// The source is still loading its visual.
+    case loading
+    /// The source visual is already available to display.
+    case ready
 }
 
 /// Controls how ``SSPhotoViewerHost`` presents the fullscreen viewer.
@@ -209,7 +220,7 @@ public struct SSPhotoViewerPage: Sendable {
 /// Cache controls intended for sample apps and deterministic UI testing.
 /// Call once from the app entry point when a fresh media run is required.
 public enum SSPhotoViewerCache {
-    /// Removes in-memory decoded images and shared URL responses.
+    /// Removes decoded images, on-device image data, and shared URL responses.
     ///
     /// This is intended for deterministic tests and sample applications. A
     /// production app should normally let the cache work across presentations.
@@ -218,6 +229,9 @@ public enum SSPhotoViewerCache {
     public static func reset() {
         SSPhotoViewerImageCache.images.removeAllObjects()
         URLCache.shared.removeAllCachedResponses()
+        Task {
+            await SSPhotoViewerDiskImageCache.shared.removeAll()
+        }
     }
 }
 
@@ -616,6 +630,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
     private let home: Home
 
     @State private var sourceFrames: [String: CGRect] = [:]
+    @State private var sourceReadiness: [String: SSPhotoViewerSourceReadiness] = [:]
     @State private var presentationSourceFrames: [String: CGRect] = [:]
     @State private var fullScreenPresentationReady = false
     @State private var hiddenSourceID: String?
@@ -749,6 +764,13 @@ public struct SSPhotoViewerHost<Home: View>: View {
                 sourceFrames = validFrames
             }
         }
+        .onPreferenceChange(SSPhotoViewerSourceReadinessKey.self) {
+            sourceReadiness.merge($0, uniquingKeysWith: { _, latest in latest })
+            if let preparingSourceID,
+               $0[preparingSourceID] == .ready {
+                endOpeningPreparation()
+            }
+        }
         .onDisappear {
             endOpeningPreparation()
         }
@@ -864,6 +886,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
               frame.height > 0
         else { return }
 
+        guard sourceReadiness[id] != .ready else { return }
         preparingSourceID = id
         openingPreparationTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 15_000_000_000)
@@ -1010,14 +1033,17 @@ public extension View {
     ///   - id: Stable ID shared with the viewer item.
     ///   - isHidden: An app-owned hiding condition in addition to the package's
     ///     automatic source ownership. Most integrations leave this `false`.
+    ///   - readiness: Whether the app-owned source visual is already available.
     func ssPhotoViewerSource(
         id: String,
-        isHidden: Bool = false
+        isHidden: Bool = false,
+        readiness: SSPhotoViewerSourceReadiness = .unknown
     ) -> some View {
         modifier(
             SSPhotoViewerSourceModifier(
                 id: id,
                 isHidden: isHidden,
+                readiness: readiness,
                 preparationOverlay: nil
             )
         )
@@ -1032,12 +1058,14 @@ public extension View {
     func ssPhotoViewerSource<PreparationOverlay: View>(
         id: String,
         isHidden: Bool = false,
+        readiness: SSPhotoViewerSourceReadiness = .unknown,
         @ViewBuilder preparationOverlay: () -> PreparationOverlay
     ) -> some View {
         modifier(
             SSPhotoViewerSourceModifier(
                 id: id,
                 isHidden: isHidden,
+                readiness: readiness,
                 preparationOverlay: AnyView(preparationOverlay())
             )
         )
@@ -1047,10 +1075,11 @@ public extension View {
 private struct SSPhotoViewerSourceModifier: ViewModifier {
     let id: String
     let isHidden: Bool
+    let readiness: SSPhotoViewerSourceReadiness
     let preparationOverlay: AnyView?
 
     @Environment(\.ssPhotoViewerHiddenSourceID) private var hiddenSourceID
-    @Environment(\.ssPhotoViewerPreparingSourceID) private var preparingSourceID
+        @Environment(\.ssPhotoViewerPreparingSourceID) private var preparingSourceID
 
     func body(content: Content) -> some View {
         content
@@ -1061,6 +1090,7 @@ private struct SSPhotoViewerSourceModifier: ViewModifier {
             .overlay {
                 if !isHidden,
                    hiddenSourceID != id,
+                   readiness != .ready,
                    preparingSourceID == id {
                     if let preparationOverlay {
                         preparationOverlay
@@ -1086,6 +1116,21 @@ private struct SSPhotoViewerSourceModifier: ViewModifier {
                     )
                 }
             }
+            .preference(
+                key: SSPhotoViewerSourceReadinessKey.self,
+                value: [id: readiness]
+            )
+    }
+}
+
+private struct SSPhotoViewerSourceReadinessKey: PreferenceKey {
+    static let defaultValue: [String: SSPhotoViewerSourceReadiness] = [:]
+
+    static func reduce(
+        value: inout [String: SSPhotoViewerSourceReadiness],
+        nextValue: () -> [String: SSPhotoViewerSourceReadiness]
+    ) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
     }
 }
 
@@ -3454,7 +3499,17 @@ private enum SSPhotoViewerMediaLoader {
             return cached
         }
 
-        guard let data = try? await URLSession.shared.data(from: url).0,
+        let data: Data
+        if let diskData = await SSPhotoViewerDiskImageCache.shared.data(for: url) {
+            data = diskData
+        } else if let networkData = try? await URLSession.shared.data(from: url).0 {
+            data = networkData
+            await SSPhotoViewerDiskImageCache.shared.store(networkData, for: url)
+        } else {
+            return nil
+        }
+
+        guard !data.isEmpty,
               !Task.isCancelled else {
             return nil
         }
@@ -3525,6 +3580,73 @@ private enum SSPhotoViewerMediaLoader {
                 kCGImageSourceCreateThumbnailWithTransform: true
             ] as CFDictionary
         )
+    }
+}
+
+/// A bounded on-device data cache beneath the decoded-image NSCache.
+private actor SSPhotoViewerDiskImageCache {
+    static let shared = SSPhotoViewerDiskImageCache()
+    private static let maximumBytes = 256 * 1024 * 1024
+    private static let directoryName = "SSPhotoViewer.Images"
+
+    private static var directoryURL: URL {
+        let base = FileManager.default.urls(
+            for: .cachesDirectory,
+            in: .userDomainMask
+        )[0]
+        return base.appendingPathComponent(directoryName, isDirectory: true)
+    }
+
+    func data(for url: URL) -> Data? {
+        let fileURL = Self.fileURL(for: url)
+        return try? Data(contentsOf: fileURL, options: [.mappedIfSafe])
+    }
+
+    func store(_ data: Data, for url: URL) {
+        let directory = Self.directoryURL
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            try data.write(to: Self.fileURL(for: url), options: .atomic)
+            Self.pruneIfNeeded(in: directory)
+        } catch {
+            // Disk caching is opportunistic; memory and network loading remain
+            // the source of truth when the device cache is unavailable.
+        }
+    }
+
+    func removeAll() {
+        try? FileManager.default.removeItem(at: Self.directoryURL)
+    }
+
+    private static func fileURL(for url: URL) -> URL {
+        let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return directoryURL.appendingPathComponent(digest).appendingPathExtension("data")
+    }
+
+    private static func pruneIfNeeded(in directory: URL) {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let entries = files.compactMap { file -> (URL, Int, Date)? in
+            guard let values = try? file.resourceValues(
+                forKeys: [.fileSizeKey, .contentModificationDateKey]
+            ), let size = values.fileSize else { return nil }
+            return (file, size, values.contentModificationDate ?? .distantPast)
+        }
+        var total = entries.reduce(0) { $0 + $1.1 }
+        for (file, size, _) in entries.sorted(by: { $0.2 < $1.2 }) {
+            guard total > maximumBytes else { break }
+            try? FileManager.default.removeItem(at: file)
+            total -= size
+        }
     }
 }
 

@@ -156,7 +156,7 @@ public struct ImageViewerPresentationPolicy<Asset: ImageViewerAsset> {
     }
 
     /// Builds the package configuration without exposing it to app screens.
-    fileprivate func makeConfiguration() -> SSPhotoViewerConfiguration {
+    func makeConfiguration() -> SSPhotoViewerConfiguration {
         let packagePageLoader: SSPhotoViewerPageLoader? = pageLoader.map { loader in
             { pageNumber in
                 let page = await loader(pageNumber)
@@ -252,12 +252,14 @@ public struct ImageViewerAdapter<Asset: ImageViewerAsset> {
     public func source<Content: View>(
         for asset: Asset,
         isHidden: Bool = false,
+        readiness: SSPhotoViewerSourceReadiness = .unknown,
         @ViewBuilder content: () -> Content
     ) -> some View {
         content()
             .ssPhotoViewerSource(
                 id: asset.imageViewerID,
-                isHidden: isHidden
+                isHidden: isHidden,
+                readiness: readiness
             )
     }
 
@@ -267,6 +269,7 @@ public struct ImageViewerAdapter<Asset: ImageViewerAsset> {
     public func source<Content: View, PreparationOverlay: View>(
         for asset: Asset,
         isHidden: Bool = false,
+        readiness: SSPhotoViewerSourceReadiness = .unknown,
         @ViewBuilder preparationOverlay: () -> PreparationOverlay,
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -274,6 +277,7 @@ public struct ImageViewerAdapter<Asset: ImageViewerAsset> {
             .ssPhotoViewerSource(
                 id: asset.imageViewerID,
                 isHidden: isHidden,
+                readiness: readiness,
                 preparationOverlay: preparationOverlay
             )
     }
