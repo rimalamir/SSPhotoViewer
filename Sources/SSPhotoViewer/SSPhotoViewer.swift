@@ -66,6 +66,14 @@ public enum SSPhotoViewerDisplayMode: Hashable, Sendable {
     case detail
 }
 
+/// Controls how ``SSPhotoViewerHost`` presents the fullscreen viewer.
+public enum SSPhotoViewerPresentationStyle: Hashable, Sendable {
+    /// Keeps the viewer in the caller's hierarchy for source-aware handoffs.
+    case sameHierarchy
+    /// Presents a scene-bound full-screen layer that can cover an active sheet.
+    case fullScreen
+}
+
 /// A stable media value that the viewer can display and page between.
 ///
 /// Identity is the most important part of this type. The same `id` connects a
@@ -596,6 +604,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
     @Binding private var selectedIndex: Int
     private let items: [SSPhotoViewerItem]
     private let paginationCursor: SSPhotoViewerPaginationCursor?
+    private let presentationStyle: SSPhotoViewerPresentationStyle
     private let configuration: SSPhotoViewerConfiguration
     private let home: Home
 
@@ -620,6 +629,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
         selectedIndex: Binding<Int>,
         items: [SSPhotoViewerItem],
         paginationCursor: SSPhotoViewerPaginationCursor? = nil,
+        presentationStyle: SSPhotoViewerPresentationStyle = .sameHierarchy,
         configuration: SSPhotoViewerConfiguration = .init(),
         @ViewBuilder home: () -> Home
     ) {
@@ -629,6 +639,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
         _selectedIndex = selectedIndex
         self.items = items
         self.paginationCursor = paginationCursor
+        self.presentationStyle = presentationStyle
         self.configuration = configuration
         self.home = home()
         // The opening hero must claim the source only after its visual is ready.
@@ -650,6 +661,7 @@ public struct SSPhotoViewerHost<Home: View>: View {
         selectedID: Binding<String>,
         items: [SSPhotoViewerItem],
         paginationCursor: SSPhotoViewerPaginationCursor? = nil,
+        presentationStyle: SSPhotoViewerPresentationStyle = .sameHierarchy,
         configuration: SSPhotoViewerConfiguration = .init(),
         @ViewBuilder home: () -> Home
     ) {
@@ -668,47 +680,21 @@ public struct SSPhotoViewerHost<Home: View>: View {
             selectedIndex: index,
             items: items,
             paginationCursor: paginationCursor,
+            presentationStyle: presentationStyle,
             configuration: configuration,
             home: home
         )
     }
 
     public var body: some View {
-        home
-            .environment(\.ssPhotoViewerHiddenSourceID, hiddenSourceID)
-            .environment(
-                \.ssPhotoViewerPreparingSourceID,
-                preparingSourceID
-            )
-            // Keep the viewer in the same SwiftUI hierarchy as its source while
-            // making the host layout-neutral. An overlay does not change the
-            // size or safe-area placement proposed to the caller's home view.
-            // The viewer itself owns fullscreen expansion only while presented.
-            .overlay {
-                if isPresented {
-                    SSPhotoViewer(
-                        items: items,
-                        paginationCursor: paginationCursor,
-                        selectedIndex: $selectedIndex,
-                        sourceFrames: sourceFrames,
-                        configuration: configuration,
-                        onOpeningReady: {
-                            endOpeningPreparation()
-                            viewerOwnsSource = true
-                            hiddenSourceID = sourceID(for: selectedIndex)
-                        },
-                        onDismiss: {
-                            endOpeningPreparation()
-                            isPresented = false
-                        }
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.clear)
-                    .ignoresSafeArea()
-                    .zIndex(100)
-                    .transition(.identity)
-                }
+        Group {
+            switch presentationStyle {
+            case .sameHierarchy:
+                homeWithViewerOverlay
+            case .fullScreen:
+                homeWithFullScreenViewer
             }
+        }
         .onChange(of: isPresented) { _, presented in
             // Source views stay in the hierarchy so their live frames remain
             // available for the hero transition. Only their visual layer is
@@ -754,6 +740,73 @@ public struct SSPhotoViewerHost<Home: View>: View {
         .onDisappear {
             endOpeningPreparation()
         }
+    }
+
+    private var homeWithViewerOverlay: some View {
+        home
+            .environment(\.ssPhotoViewerHiddenSourceID, hiddenSourceID)
+            .environment(
+                \.ssPhotoViewerPreparingSourceID,
+                preparingSourceID
+            )
+            // An overlay keeps same-hierarchy handoffs while remaining
+            // layout-neutral for the caller's home view.
+            .overlay {
+                if isPresented {
+                    viewerContent
+                        .transition(.identity)
+                }
+            }
+    }
+
+    private var homeWithFullScreenViewer: some View {
+        home
+            .environment(\.ssPhotoViewerHiddenSourceID, hiddenSourceID)
+            .environment(
+                \.ssPhotoViewerPreparingSourceID,
+                preparingSourceID
+            )
+            // This is attached to the caller's current scene/presentation
+            // hierarchy, not to a global UIWindow. It can therefore cover a
+            // sheet while remaining safe for Stage Manager and multiwindow.
+            .fullScreenCover(
+                isPresented: $isPresented,
+                onDismiss: {
+                    endOpeningPreparation()
+                }
+            ) {
+                viewerContent
+                    // Let the shared viewer backdrop own the gradual fade
+                    // during opening, interactive dismissal, and return. The
+                    // system cover must not add an opaque presentation layer.
+                    .presentationBackground(.clear)
+                    // The viewer already owns the vertical dismissal gesture
+                    // and its return-hero timing.
+                    .interactiveDismissDisabled(true)
+            }
+    }
+
+    private var viewerContent: some View {
+        SSPhotoViewer(
+            items: items,
+            paginationCursor: paginationCursor,
+            selectedIndex: $selectedIndex,
+            sourceFrames: sourceFrames,
+            configuration: configuration,
+            onOpeningReady: {
+                endOpeningPreparation()
+                viewerOwnsSource = true
+                hiddenSourceID = sourceID(for: selectedIndex)
+            },
+            onDismiss: {
+                endOpeningPreparation()
+                isPresented = false
+            }
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.clear)
+        .ignoresSafeArea()
+        .zIndex(100)
     }
 
     private func sourceID(for index: Int) -> String? {

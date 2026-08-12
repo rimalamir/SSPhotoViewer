@@ -53,16 +53,20 @@ Add the package repository URL in Xcode:
 1. Open **File → Add Package Dependencies**.
 2. Enter `https://github.com/rimalamir/SSPhotoViewer.git`.
 3. Select a version rule.
-4. Add the `SSPhotoViewer` product to your app target.
+4. Add the `SSPhotoViewerAdapter` product to your app target.
 
 For local development, add this repository root as a local package. The root
-contains `Package.swift` and exposes the `SSPhotoViewer` library product.
+contains `Package.swift` and exposes the `SSPhotoViewerAdapter` library product.
+
+The lower-level `SSPhotoViewer` target is an internal implementation dependency
+of the adapter and is intentionally not exposed as an SPM product. App chat and
+gallery targets should import only `SSPhotoViewerAdapter`.
 
 Example applications are available in the companion repository:
 `https://github.com/rimalamir/SSPhotoViewerExamples`.
 
 ```swift
-import SSPhotoViewer
+import SSPhotoViewerAdapter
 import SwiftUI
 ```
 
@@ -81,13 +85,181 @@ source after the hero can render it, and restores the source only after dismissa
 finishes. The host is an overlay around your `home` view: it does not impose a
 frame, background, safe-area inset, or container layout on that view. Place the
 host where the app owns the screen's desired size; the package expands only the
-active fullscreen viewer layer. This is why you should not present the viewer
-from `.sheet` or `.fullScreenCover`.
+active fullscreen viewer layer.
+
+### Choose a presentation style
+
+Use the default `.sameHierarchy` style for normal integrations. It preserves the
+source-aware hero animation, keeps the viewer in the same SwiftUI hierarchy,
+and is the recommended choice.
+
+```swift
+SSPhotoViewerHost(
+    isPresented: $isViewerPresented,
+    selectedID: $selectedID,
+    items: items
+) {
+    YourScreen()
+}
+```
+
+Use `.fullScreen` only when the host is already inside a sheet or another
+presentation boundary and the viewer must cover that presentation. It uses the
+scene-bound native full-screen presentation and does not manage a global
+`UIWindow`; its system presentation transition is intentional.
+The cover background is transparent and its system swipe-to-dismiss is disabled
+so the viewer's shared gradual backdrop fade and return-hero animation remain
+in control.
+
+```swift
+SSPhotoViewerHost(
+    isPresented: $isViewerPresented,
+    selectedID: $selectedID,
+    items: items,
+    presentationStyle: .fullScreen
+) {
+    SheetGalleryView()
+}
+```
+
+Do not wrap `isViewerPresented = true` in `withAnimation`. The same-hierarchy
+viewer owns its transition and uses `.transition(.identity)` to avoid a second
+animation owner. The full-screen style uses the system presentation transition.
+
+## Adapter viewer API
+
+`SSPhotoViewerAdapter` is the public viewer facade. Chat and gallery import this
+product directly and provide their app-owned `ImageViewerAsset` values. They do
+not create another adapter and do not import the private lower-level viewer
+target.
+
+```swift
+import SSPhotoViewerAdapter
+
+struct AppImage: ImageViewerAsset {
+    let imageViewerID: String
+    let imageViewerMedia: ImageViewerMedia
+    let imageViewerThumbnailURL: URL?
+    let imageViewerAccessibilityLabel: String?
+}
+```
+
+The app supplies its asset type and owns the shared presentation/selection
+bindings:
+
+```swift
+struct MediaScene: View {
+    let assets: [AppImage]
+    @State private var isViewerPresented = false
+    @State private var selectedID = ""
+
+    var body: some View {
+        let adapter = ImageViewerAdapter(
+            assets: assets,
+            isPresented: $isViewerPresented,
+            selectedID: $selectedID,
+            policy: ImageViewerPresentationPolicy<AppImage>(
+                presentationStyle: .sameHierarchy,
+                showsDefaultTopBar: false,
+                showsDefaultPaginationStrip: true,
+                showsDefaultActionBar: false,
+                showsVideoControls: true
+            )
+        )
+
+        adapter.host {
+            NavigationStack {
+                GalleryView(assets: assets, adapter: adapter)
+            }
+        }
+    }
+}
+```
+
+Both chat and gallery use the same `ImageViewerAdapter` instance. The adapter
+converts assets, maps presentation policy, builds the private viewer
+configuration, owns source registration, and writes the app-owned
+selection/presentation bindings:
+
+```swift
+struct GalleryView: View {
+    let assets: [AppImage]
+    let adapter: ImageViewerAdapter<AppImage>
+
+    var body: some View {
+        ForEach(assets, id: \.imageViewerID) { asset in
+            adapter.source(for: asset) {
+                AssetThumbnail(asset)
+            }
+            .onTapGesture {
+                adapter.present(asset)
+            }
+        }
+    }
+}
+```
+
+The consuming app is expected to provide stable IDs, media URLs, optional
+geometry/thumbnail metadata, and the presentation policy. App repositories,
+authorization, chat models, gallery models, and navigation remain outside the
+package. The adapter is the only public viewer surface.
+
+### Root placement for iPhone and iPad
+
+For `.sameHierarchy`, place the host around the complete screen or scene root,
+above your navigation or tab container. This is important for iPad
+`NavigationSplitView`, `TabView`, and Stage Manager: the viewer can cover the
+sidebar, detail column, and tab bar only when the host overlays that root. A
+host placed inside a detail column or tab can cover only that child because
+SwiftUI does not allow a child view to draw over a sibling or its parent chrome.
+
+If the complete screen is already presented as a sheet, use
+`presentationStyle: .fullScreen` on the host inside that sheet when the viewer
+must cover the sheet and the scene window.
+
+```swift
+struct MediaScene: View {
+    @State private var isViewerPresented = false
+    @State private var selectedID = "photo-1"
+
+    let items: [SSPhotoViewerItem]
+
+    var body: some View {
+        SSPhotoViewerHost(
+            isPresented: $isViewerPresented,
+            selectedID: $selectedID,
+            items: items
+        ) {
+            #if os(iOS)
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                NavigationSplitView {
+                    Sidebar()
+                } detail: {
+                    Gallery(items: items, selectedID: $selectedID,
+                            isViewerPresented: $isViewerPresented)
+                }
+            } else {
+                NavigationStack {
+                    Gallery(items: items, selectedID: $selectedID,
+                            isViewerPresented: $isViewerPresented)
+                }
+            }
+            #endif
+        }
+    }
+}
+```
+
+The package remains navigation-agnostic: `Sidebar`, `Gallery`, and the
+navigation container remain application-owned. In a multiwindow or Stage
+Manager app, attach one host to each scene's root rather than managing a global
+`UIWindow` overlay. If the screen itself is a sheet, use `.fullScreen` only for
+the viewer host inside that sheet.
 
 ## Quick start
 
-Use stable media identity, place the host around your home, and register the
-visual thumbnail as a source.
+Use stable media identity, place the host around the complete screen root, and
+register the visual thumbnail as a source.
 
 ```swift
 struct LibraryScreen: View {
@@ -132,9 +304,6 @@ struct LibraryScreen: View {
     }
 }
 ```
-
-Do not wrap `isViewerPresented = true` in `withAnimation`. The viewer owns its
-transition and uses `.transition(.identity)` to avoid a second animation owner.
 
 ## Creating media items
 
@@ -615,20 +784,15 @@ Do not call it on every presentation in production.
 
 ## Public API map
 
-- `SSPhotoViewerHost` — same-hierarchy composition and source ownership.
-- `SSPhotoViewerItem` — stable media identity and resource metadata.
-- `SSPhotoViewerPage` — append-only pagination result.
-- `SSPhotoViewerConfiguration` — behavior and custom UI configuration.
-- `SSPhotoViewerChromeContext` — dynamic chrome state and commands.
-- `SSPhotoViewerVideoControlsContext` — player state and transport commands.
-- `SSPhotoViewerAction` — application-owned semantic actions.
-- `SSPhotoViewerFallbackDestination` — no-source dismissal behavior.
-- `SSPhotoViewerDisplayMode` — minimal/detail state.
-- `SSPhotoViewerPaginationState` — pagination observability for custom chrome.
-- `SSPhotoViewerPaginationCursor` — caller-owned eager/pull synchronization.
-- `SSPhotoViewerCache` — deterministic cache reset for tests and demos.
-- `View.ssPhotoViewerSource` — source frame registration and preparation UI.
-- `EnvironmentValues.ssPhotoViewerIsZoomed` — zoom-aware custom bottom chrome.
+- `ImageViewerAdapter` — the public viewer facade and app-owned bindings.
+- `ImageViewerAsset` — the app asset contract.
+- `ImageViewerMedia` — app-facing image/video resource input.
+- `ImageViewerPresentationPolicy` — presentation, chrome, pagination, and action policy.
+- `ImageViewerPage` — app-owned pagination result.
+- `ImageViewerAction` — app-owned semantic actions.
+
+The lower-level `SSPhotoViewer` target, host, item, chrome, and source APIs are
+implementation details behind the adapter product and are not SPM products.
 
 The DocC catalog under `Sources/SSPhotoViewer/SSPhotoViewer.docc` contains the
 same contracts as focused integration guides suitable for Xcode Quick Help.
