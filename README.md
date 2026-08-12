@@ -44,6 +44,12 @@ https://github.com/user-attachments/assets/5b85f7a2-6b64-4f7a-aa70-50be8611c090
 - SwiftUI.
 - Xcode capable of building the selected iOS SDK.
 
+For URL-backed images and image posters, an app-owned `imageLoader` is a
+required integration dependency. The package intentionally provides no default
+network loader: it cannot choose the host app's authorization, cache,
+downsampling, retry, or local-media policy. Video URLs and `AVAsset` playback
+continue to use AVFoundation; image and poster acquisition remains app-owned.
+
 The package uses iOS 26 APIs only behind availability checks.
 
 ## Installation
@@ -181,6 +187,9 @@ struct MediaScene: View {
             isPresented: $isViewerPresented,
             selectedID: $selectedID,
             policy: ImageViewerPresentationPolicy<AppImage>(
+                imageLoader: { url in
+                    await appImagePipeline.image(for: url)
+                },
                 presentationStyle: .sameHierarchy,
                 showsDefaultTopBar: false,
                 showsDefaultPaginationStrip: true,
@@ -850,8 +859,11 @@ uses a lazy stack, and pagination is
 append-only with an incremental ID-to-index map.
 
 The package does not download, decode, or cache images. Supply `imageLoader` in
-the viewer policy/configuration and let the app's media pipeline own networking,
-authorization, decoding, caching, retries, and freshness.
+the viewer policy/configuration before presenting URL-backed media. There is no
+safe package default: the app's media pipeline must own networking,
+authorization, decoding, caching, retries, and freshness. Omitting the loader
+is supported only for placeholder-only integrations and does not display
+URL-backed image or poster content.
 
 For 1,000+ media items:
 
@@ -874,9 +886,9 @@ For 1,000+ media items:
 
 ## Media loading
 
-The viewer is intentionally not a network client. Configure an app-owned
-loader, for example one backed by Nuke, Kingfisher, Photos, local files, or an
-authenticated URLSession:
+The viewer is intentionally not a network client. Configure the required
+app-owned loader, for example one backed by Nuke, Kingfisher, Photos, local
+files, or an authenticated URLSession:
 
 ```swift
 let policy = ImageViewerPresentationPolicy<AppImage>(
@@ -888,8 +900,8 @@ let policy = ImageViewerPresentationPolicy<AppImage>(
 
 The loader returns the decoded `UIImage` the viewer should display. The app
 controls full-resolution policy and can return a thumbnail first, then update
-its own pipeline as needed. If no loader is supplied, URL-backed image and
-poster surfaces remain placeholders; no implicit network request occurs.
+its own pipeline as needed. The package has no fallback loader; if it is not
+provided, URL-backed image and poster surfaces remain placeholders.
 
 For advanced video pipelines, provide an already-configured `AVAsset` instead
 of a URL:

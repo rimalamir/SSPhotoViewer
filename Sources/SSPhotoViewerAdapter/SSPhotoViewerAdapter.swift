@@ -152,6 +152,9 @@ public struct ImageViewerPage<Asset: ImageViewerAsset> {
 /// The app chooses this policy once at the composition boundary. Chat and
 /// gallery views do not import or construct ``SSPhotoViewerConfiguration``.
 public struct ImageViewerPresentationPolicy<Asset: ImageViewerAsset> {
+    /// Required for URL-backed images and posters. The package has no default
+    /// loader because media authorization, caching, and decoding are app policy.
+    /// `nil` is retained only for placeholder-only integrations.
     public var imageLoader: ImageViewerImageLoader?
     public var presentationStyle: ImageViewerPresentationStyle
     public var fallbackDestination: ImageViewerFallbackDestination

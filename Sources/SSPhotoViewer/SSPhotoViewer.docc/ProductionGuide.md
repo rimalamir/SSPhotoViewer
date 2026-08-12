@@ -22,12 +22,14 @@ rebuilding transformed arrays inside custom chrome on every strip movement.
 
 ## Media loading and caching
 
-The package is a viewer, not a networking or image-cache layer. Provide an
-app-owned ``SSPhotoViewerImageLoader`` through the configuration. The app owns
+The package is a viewer, not a networking or image-cache layer. Provide a
+required, app-owned ``SSPhotoViewerImageLoader`` through the configuration. The
+package cannot provide a safe default because authorization, URL signing,
+decoding resolution, and cache policy belong to the host app. The app owns
 authorization, URL signing, decoding resolution, memory/disk caching, retry,
-freshness, and invalid-response handling. If no image loader is provided,
-URL-backed image and poster surfaces remain placeholders; the package performs
-no implicit image request.
+freshness, and invalid-response handling. Omitting the loader is supported only
+for placeholder-only integrations; URL-backed image and poster surfaces remain
+placeholders and the package performs no implicit image request.
 
 ## App-owned media pipeline
 
