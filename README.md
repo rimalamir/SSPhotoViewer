@@ -84,6 +84,25 @@ host where the app owns the screen's desired size; the package expands only the
 active fullscreen viewer layer. This is why you should not present the viewer
 from `.sheet` or `.fullScreenCover`.
 
+Choose `presentationStyle: .fullScreen` when the host itself is inside a sheet
+or another presentation and the viewer must cover the complete scene window:
+
+```swift
+SSPhotoViewerHost(
+    isPresented: $isViewerPresented,
+    selectedID: $selectedID,
+    items: items,
+    presentationStyle: .fullScreen
+) {
+    SheetGalleryView()
+}
+```
+
+The default `.sameHierarchy` style preserves the source-aware in-place handoff.
+The `.fullScreen` style uses the caller's scene-bound native full-screen
+presentation, so it can cover an active sheet without managing a global
+`UIWindow`. Its presentation transition is system-owned.
+
 ### Root placement for iPhone and iPad
 
 Place the host around the complete screen or scene root, above your navigation
@@ -91,6 +110,10 @@ container. This is important for iPad `NavigationSplitView` and Stage Manager:
 the viewer can cover the sidebar and detail column only when the host overlays
 the split-view root. A host placed inside the detail column can cover only that
 column because SwiftUI does not allow a child view to draw over a sibling.
+
+If the complete screen is already presented as a sheet, use
+`presentationStyle: .fullScreen` on the host inside that sheet when the viewer
+must cover the sheet and the scene window.
 
 ```swift
 struct MediaScene: View {

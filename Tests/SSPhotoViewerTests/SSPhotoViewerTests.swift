@@ -126,4 +126,15 @@ final class SSPhotoViewerTests: XCTestCase {
             .fixed(frame)
         )
     }
+
+    func testPresentationStylesAreDistinctAndStable() {
+        XCTAssertNotEqual(
+            SSPhotoViewerPresentationStyle.sameHierarchy,
+            .fullScreen
+        )
+        XCTAssertEqual(
+            SSPhotoViewerPresentationStyle.fullScreen,
+            .fullScreen
+        )
+    }
 }

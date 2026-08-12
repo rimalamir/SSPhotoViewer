@@ -31,7 +31,10 @@ appending pages.
 
 ## Add a host
 
-The host is a `ZStack`-style composition root. It does not present a sheet.
+The default host is a same-hierarchy composition root and does not present a
+sheet. If the host is already inside a sheet and the viewer must cover that
+presentation, use ``SSPhotoViewerPresentationStyle/fullScreen``. That mode uses
+the caller's scene-bound native full-screen presentation.
 
 ```swift
 struct Gallery: View {
@@ -137,4 +140,3 @@ media ID and resets when that page is left.
 - Read <doc:HandoffSources> before integrating a lazy or moving home layout.
 - Read <doc:MediaAndPagination> before adding network pagination.
 - Read <doc:CustomChromeAndVideoControls> for custom strips and controls.
-
