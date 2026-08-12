@@ -82,6 +82,29 @@ final class SSPhotoViewerTests: XCTestCase {
         XCTAssertTrue(page.hasMore)
     }
 
+    func testSourceReadinessContractHasConservativeDefaultStates() {
+        XCTAssertNotEqual(
+            SSPhotoViewerSourceReadiness.unknown,
+            SSPhotoViewerSourceReadiness.ready
+        )
+        XCTAssertNotEqual(
+            SSPhotoViewerSourceReadiness.loading,
+            SSPhotoViewerSourceReadiness.ready
+        )
+        XCTAssertEqual(
+            Set([
+                SSPhotoViewerSourceReadiness.unknown,
+                .loading,
+                .ready
+            ]),
+            Set([
+                .unknown,
+                .loading,
+                .ready
+            ])
+        )
+    }
+
     func testPaginationCursorRepresentsCallerOwnedEagerProgress() {
         let cursor = SSPhotoViewerPaginationCursor(
             nextPageNumber: 4,
