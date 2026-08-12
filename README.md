@@ -53,20 +53,20 @@ Add the package repository URL in Xcode:
 1. Open **File → Add Package Dependencies**.
 2. Enter `https://github.com/rimalamir/SSPhotoViewer.git`.
 3. Select a version rule.
-4. Add the `SSPhotoViewer` product to your app target.
+4. Add the `SSPhotoViewerAdapter` product to your app target.
 
 For local development, add this repository root as a local package. The root
-contains `Package.swift` and exposes the `SSPhotoViewer` library product.
+contains `Package.swift` and exposes the `SSPhotoViewerAdapter` library product.
 
-For the recommended app boundary, add the `SSPhotoViewerAdapter` product
-instead. App chat and gallery targets should import `SSPhotoViewerAdapter`; only
-that adapter target imports `SSPhotoViewer`.
+The lower-level `SSPhotoViewer` target is an internal implementation dependency
+of the adapter and is intentionally not exposed as an SPM product. App chat and
+gallery targets should import only `SSPhotoViewerAdapter`.
 
 Example applications are available in the companion repository:
 `https://github.com/rimalamir/SSPhotoViewerExamples`.
 
 ```swift
-import SSPhotoViewer
+import SSPhotoViewerAdapter
 import SwiftUI
 ```
 

@@ -9,10 +9,6 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "SSPhotoViewer",
-            targets: ["SSPhotoViewer"]
-        ),
-        .library(
             name: "SSPhotoViewerAdapter",
             targets: ["SSPhotoViewerAdapter"]
         ),

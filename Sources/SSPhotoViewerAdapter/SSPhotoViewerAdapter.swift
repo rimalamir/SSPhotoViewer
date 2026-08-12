@@ -156,7 +156,7 @@ public struct ImageViewerPresentationPolicy<Asset: ImageViewerAsset> {
     }
 
     /// Builds the package configuration without exposing it to app screens.
-    public func makeConfiguration() -> SSPhotoViewerConfiguration {
+    fileprivate func makeConfiguration() -> SSPhotoViewerConfiguration {
         let packagePageLoader: SSPhotoViewerPageLoader? = pageLoader.map { loader in
             { pageNumber in
                 let page = await loader(pageNumber)
