@@ -776,6 +776,13 @@ public struct SSPhotoViewerHost<Home: View>: View {
                 }
             ) {
                 viewerContent
+                    // Let the shared viewer backdrop own the gradual fade
+                    // during opening, interactive dismissal, and return. The
+                    // system cover must not add an opaque presentation layer.
+                    .presentationBackground(.clear)
+                    // The viewer already owns the vertical dismissal gesture
+                    // and its return-hero timing.
+                    .interactiveDismissDisabled(true)
             }
     }
 

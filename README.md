@@ -103,6 +103,9 @@ Use `.fullScreen` only when the host is already inside a sheet or another
 presentation boundary and the viewer must cover that presentation. It uses the
 scene-bound native full-screen presentation and does not manage a global
 `UIWindow`; its system presentation transition is intentional.
+The cover background is transparent and its system swipe-to-dismiss is disabled
+so the viewer's shared gradual backdrop fade and return-hero animation remain
+in control.
 
 ```swift
 SSPhotoViewerHost(
