@@ -27,7 +27,7 @@ authorization, persistence, and product-specific actions.
 
 ### Core capabilities
 
-- Image and video media backed by URLs.
+- Image and video media metadata backed by URLs, with app-owned image loading.
 - Optional thumbnails, video posters, and aspect-ratio hints.
 - Runtime aspect-ratio resolution when metadata is unknown.
 - Horizontal paging, pinch/double-tap zoom, bounded panning, and drag dismissal.
@@ -70,5 +70,4 @@ authorization, persistence, and product-specific actions.
 
 - <doc:ProductionGuide>
 - ``SSPhotoViewerFallbackDestination``
-- ``SSPhotoViewerCache``
 - ``SwiftUICore/EnvironmentValues/ssPhotoViewerIsZoomed``

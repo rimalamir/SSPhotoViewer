@@ -1,7 +1,5 @@
 import AVFoundation
 import AVKit
-import CryptoKit
-import ImageIO
 import SwiftUI
 import UIKit
 
@@ -237,24 +235,6 @@ public struct SSPhotoViewerPage: Sendable {
     public init(items: [SSPhotoViewerItem], hasMore: Bool) {
         self.items = items
         self.hasMore = hasMore
-    }
-}
-
-/// Cache controls intended for sample apps and deterministic UI testing.
-/// Call once from the app entry point when a fresh media run is required.
-public enum SSPhotoViewerCache {
-    /// Removes decoded images, on-device image data, and shared URL responses.
-    ///
-    /// This is intended for deterministic tests and sample applications. A
-    /// production app should normally let the cache work across presentations.
-    /// Call it at most once during app launch when a cold-cache run is required.
-    @MainActor
-    public static func reset() {
-        SSPhotoViewerImageCache.images.removeAllObjects()
-        URLCache.shared.removeAllCachedResponses()
-        Task {
-            await SSPhotoViewerDiskImageCache.shared.removeAll()
-        }
     }
 }
 
@@ -513,6 +493,10 @@ public enum SSPhotoViewerFallbackDestination: Equatable, Sendable {
 /// Loads viewer pages numbered from `1` upward.
 public typealias SSPhotoViewerPageLoader = (Int) async -> SSPhotoViewerPage
 
+/// Loads an image for the viewer. The app can provide authorization, its own
+/// cache, decoding policy, or signed-request refresh at this boundary.
+public typealias SSPhotoViewerImageLoader = (URL) async -> UIImage?
+
 /// Builds media-aware top or bottom chrome.
 public typealias SSPhotoViewerChromeBuilder = (SSPhotoViewerChromeContext) -> AnyView
 
@@ -525,6 +509,10 @@ public typealias SSPhotoViewerVideoControlsBuilder = (SSPhotoViewerVideoControls
 /// dependencies where practical; closures may capture repositories or feature
 /// actions, but rendering state should come from the supplied contexts.
 public struct SSPhotoViewerConfiguration {
+    /// App-owned image loader. The package does not perform networking or
+    /// maintain an image cache; return the decoded image from the app's media
+    /// pipeline, including authorization and caching as needed.
+    public var imageLoader: SSPhotoViewerImageLoader?
     /// Extends the viewer sequence as paging or the thumbnail strip approaches
     /// the current boundary.
     ///
@@ -579,6 +567,7 @@ public struct SSPhotoViewerConfiguration {
     /// store type-erased `AnyView` values.
     public init(
         pageLoader: SSPhotoViewerPageLoader? = nil,
+        imageLoader: SSPhotoViewerImageLoader? = nil,
         fallbackDestination: SSPhotoViewerFallbackDestination = .source,
         initialDisplayMode: SSPhotoViewerDisplayMode = .minimal,
         showsDefaultTopBar: Bool = true,
@@ -594,6 +583,7 @@ public struct SSPhotoViewerConfiguration {
         onAction: @escaping (SSPhotoViewerAction) -> Void = { _ in }
     ) {
         self.pageLoader = pageLoader
+        self.imageLoader = imageLoader
         self.fallbackDestination = fallbackDestination
         self.initialDisplayMode = initialDisplayMode
         self.showsDefaultTopBar = showsDefaultTopBar
@@ -1295,10 +1285,16 @@ private struct SSPhotoViewer: View {
         _loadedItems = State(initialValue: items)
         _loadedIndexByID = State(
             initialValue: Dictionary(
-                uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) }
+                items.enumerated().map { ($0.element.id, $0.offset) },
+                uniquingKeysWith: { first, _ in first }
             )
         )
-        _zoom = State(initialValue: Dictionary(uniqueKeysWithValues: items.map { ($0.id, ZoomState()) }))
+        _zoom = State(
+            initialValue: Dictionary(
+                items.map { ($0.id, ZoomState()) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        )
         _detailProgress = State(
             initialValue: configuration.initialDisplayMode == .detail ? 1 : 0
         )
@@ -1580,8 +1576,9 @@ private struct SSPhotoViewer: View {
     }
 
     private func pager(size: CGSize) -> some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(pagerIndices, id: \.self) { index in
+        let indices: [Int] = pagerIndices
+        return ZStack(alignment: .topLeading) {
+            ForEach(indices, id: \.self) { (index: Int) in
                 let item = loadedItems[index]
                 let detailTreatmentApplies = aspectRatio(for: item) < 1
                 let pageIsZoomed = index == selectedIndex && isCurrentImageZoomed
@@ -1634,7 +1631,8 @@ private struct SSPhotoViewer: View {
                         fullscreenMediaReadyID = item.id
                         finishOpeningIfReady()
                     },
-                    interactiveOffset: index == selectedIndex ? liveZoomPanOffset : .zero
+                    interactiveOffset: index == selectedIndex ? liveZoomPanOffset : .zero,
+                    imageLoader: configuration.imageLoader
                 )
                 .id(item.id)
                 .frame(width: size.width, height: size.height)
@@ -2268,7 +2266,7 @@ private struct SSPhotoViewer: View {
         frame: CGRect,
         direction: ReturnDirection
     ) -> CGRect {
-        if let last = loadedItems.reversed().compactMap({ sourceFrames[$0.id] }).last {
+        if let last = loadedItems.compactMap({ sourceFrames[$0.id] }).last {
             switch direction {
             case .horizontal:
                 return CGRect(
@@ -2403,7 +2401,10 @@ private struct SSPhotoViewer: View {
                                     proxy.scrollTo(item.id, anchor: .center)
                                     requestNextPageIfNeeded()
                                 } label: {
-                                    SSPhotoViewerThumbnailSurface(item: item)
+                                    SSPhotoViewerThumbnailSurface(
+                                        item: item,
+                                        imageLoader: configuration.imageLoader
+                                    )
                                         .frame(
                                             width: thumbnailWidth(
                                                 for: item,
@@ -2654,7 +2655,8 @@ private struct SSPhotoViewer: View {
             imageContentMode: .fill,
             placeholderColor: .clear,
             usesStaticVisual: true,
-            usesThumbnailVisual: true
+            usesThumbnailVisual: true,
+            imageLoader: configuration.imageLoader
         ) {
             completeReturnHero()
         }
@@ -2678,6 +2680,7 @@ private struct SSPhotoViewer: View {
             placeholderColor: .clear,
             usesStaticVisual: true,
             usesThumbnailVisual: true,
+            imageLoader: configuration.imageLoader,
             onReady: {
                 guard isOpening, !openingHeroReady else { return }
 
@@ -2921,6 +2924,7 @@ private struct SSPhotoViewerMediaPage: View {
     let onPlayerReady: (AVPlayer) -> Void
     let onReady: () -> Void
     let interactiveOffset: CGSize
+    let imageLoader: SSPhotoViewerImageLoader?
 
     @GestureState private var pinchBaseline: PinchBaseline?
     @State private var mediaReady = false
@@ -2975,6 +2979,7 @@ private struct SSPhotoViewerMediaPage: View {
                     // Native AVPlayer controls are disabled so the package can
                     // keep one stable, zoom-independent control surface.
                     showsPlaybackControls: false,
+                    imageLoader: imageLoader,
                     onReady: {
                         mediaReady = true
                         onReady()
@@ -3245,35 +3250,15 @@ private struct SSPhotoViewerVideoControls: View {
 
 private struct SSPhotoViewerThumbnailSurface: View {
     let item: SSPhotoViewerItem
+    let imageLoader: SSPhotoViewerImageLoader?
     @State private var image: UIImage?
 
-    init(item: SSPhotoViewerItem) {
+    init(
+        item: SSPhotoViewerItem,
+        imageLoader: SSPhotoViewerImageLoader? = nil
+    ) {
         self.item = item
-
-        if let thumbnailURL = item.thumbnailURL {
-            _image = State(
-                initialValue: SSPhotoViewerImageCache.images.object(
-                    forKey: thumbnailURL as NSURL
-                )
-            )
-        } else {
-            switch item.media {
-            case .image(let url):
-                _image = State(
-                    initialValue: SSPhotoViewerImageCache.images.object(
-                        forKey: url as NSURL
-                    )
-                )
-            case .video(_, let posterURL):
-                if let posterURL {
-                    _image = State(
-                        initialValue: SSPhotoViewerImageCache.images.object(
-                            forKey: posterURL as NSURL
-                        )
-                    )
-                }
-            }
-        }
+        self.imageLoader = imageLoader
     }
 
     var body: some View {
@@ -3298,14 +3283,14 @@ private struct SSPhotoViewerThumbnailSurface: View {
         }
         .task(id: item.id) {
             if let thumbnailURL = item.thumbnailURL {
-                image = await SSPhotoViewerMediaLoader.image(from: thumbnailURL)
+                image = await imageLoader?(thumbnailURL)
             } else {
                 switch item.media {
                 case .image(let url):
-                    image = await SSPhotoViewerMediaLoader.image(from: url)
+                    image = await imageLoader?(url)
                 case .video(let url, let posterURL):
                     image = if let posterURL {
-                        await SSPhotoViewerMediaLoader.image(from: posterURL)
+                        await imageLoader?(posterURL)
                     } else {
                         await SSPhotoViewerMediaLoader.firstVideoFrame(from: url)
                     }
@@ -3351,6 +3336,7 @@ private struct SSPhotoViewerMediaSurface: View {
     let usesStaticVisual: Bool
     let usesThumbnailVisual: Bool
     let showsPlaybackControls: Bool
+    let imageLoader: SSPhotoViewerImageLoader?
     var onReady: (() -> Void)? = nil
     var onPlayerReady: ((AVPlayer) -> Void)? = nil
     var onAspectRatioReady: ((CGFloat) -> Void)? = nil
@@ -3366,6 +3352,7 @@ private struct SSPhotoViewerMediaSurface: View {
         usesStaticVisual: Bool = false,
         usesThumbnailVisual: Bool = false,
         showsPlaybackControls: Bool = true,
+        imageLoader: SSPhotoViewerImageLoader? = nil,
         onReady: (() -> Void)? = nil,
         onPlayerReady: ((AVPlayer) -> Void)? = nil,
         onAspectRatioReady: ((CGFloat) -> Void)? = nil
@@ -3377,20 +3364,12 @@ private struct SSPhotoViewerMediaSurface: View {
         self.usesStaticVisual = usesStaticVisual
         self.usesThumbnailVisual = usesThumbnailVisual
         self.showsPlaybackControls = showsPlaybackControls
+        self.imageLoader = imageLoader
         self.onReady = onReady
         self.onPlayerReady = onPlayerReady
         self.onAspectRatioReady = onAspectRatioReady
 
-        if case .image(let url) = item.media {
-            let initialVisualURL = usesThumbnailVisual
-                ? (item.thumbnailURL ?? url)
-                : url
-            _image = State(
-                initialValue: SSPhotoViewerImageCache.images.object(
-                    forKey: initialVisualURL as NSURL
-                )
-            )
-        }
+        _image = State(initialValue: nil)
     }
 
     var body: some View {
@@ -3424,7 +3403,7 @@ private struct SSPhotoViewerMediaSurface: View {
             switch item.media {
             case .image(let url):
                 if usesThumbnailVisual, let thumbnailURL = item.thumbnailURL {
-                    let preview = await SSPhotoViewerMediaLoader.image(from: thumbnailURL)
+                    let preview = await loadImage(from: thumbnailURL)
                     if let preview {
                         image = preview
                         if item.thumbnailPreservesMediaAspectRatio {
@@ -3439,7 +3418,7 @@ private struct SSPhotoViewerMediaSurface: View {
                         signalReady()
                     }
 
-                    if let full = await SSPhotoViewerMediaLoader.image(from: url) {
+                    if let full = await loadImage(from: url) {
                         // Keep the handoff surface on the exact source preview.
                         // The fullscreen page loads and displays `full`; this
                         // surface only needs its authoritative dimensions so
@@ -3450,11 +3429,7 @@ private struct SSPhotoViewerMediaSurface: View {
                             signalReady()
                         }
                     }
-                } else if let cached = SSPhotoViewerImageCache.images.object(forKey: url as NSURL) {
-                    image = cached
-                    onAspectRatioReady?(cached.size.width / cached.size.height)
-                    signalReady()
-                } else if let decoded = await SSPhotoViewerMediaLoader.image(from: url) {
+                } else if let decoded = await loadImage(from: url) {
                     image = decoded
                     onAspectRatioReady?(decoded.size.width / decoded.size.height)
                     signalReady()
@@ -3471,7 +3446,7 @@ private struct SSPhotoViewerMediaSurface: View {
 
                 let poster: UIImage?
                 if let previewURL = item.thumbnailURL ?? posterURL {
-                    poster = await SSPhotoViewerMediaLoader.image(from: previewURL)
+                    poster = await loadImage(from: previewURL)
                 } else {
                     poster = await SSPhotoViewerMediaLoader.firstVideoFrame(from: url)
                 }
@@ -3555,51 +3530,16 @@ private struct SSPhotoViewerMediaSurface: View {
             onReady?()
         }
     }
+
+    private func loadImage(from url: URL) async -> UIImage? {
+        if let imageLoader {
+            return await imageLoader(url)
+        }
+        return nil
+    }
 }
 
 private enum SSPhotoViewerMediaLoader {
-    static let maxImagePixelSize = 2048
-
-    static func image(from url: URL) async -> UIImage? {
-        if let cached = await MainActor.run(body: {
-            SSPhotoViewerImageCache.images.object(forKey: url as NSURL)
-        }) {
-            return cached
-        }
-
-        let data: Data
-        if let diskData = await SSPhotoViewerDiskImageCache.shared.data(for: url) {
-            data = diskData
-        } else if let networkData = try? await URLSession.shared.data(from: url).0 {
-            data = networkData
-            await SSPhotoViewerDiskImageCache.shared.store(networkData, for: url)
-        } else {
-            return nil
-        }
-
-        guard !data.isEmpty,
-              !Task.isCancelled else {
-            return nil
-        }
-
-        let cgImage = await Task.detached(priority: .userInitiated) {
-            downsampledImage(data: data, maxPixelSize: maxImagePixelSize)
-        }.value
-
-        guard let cgImage, !Task.isCancelled else { return nil }
-        let decoded = UIImage(cgImage: cgImage)
-
-        await MainActor.run {
-            let cost = decoded.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
-            SSPhotoViewerImageCache.images.setObject(
-                decoded,
-                forKey: url as NSURL,
-                cost: cost
-            )
-        }
-        return decoded
-    }
-
     static func firstVideoFrame(from url: URL) async -> UIImage? {
         return await firstVideoFrame(from: AVURLAsset(url: url))
     }
@@ -3634,99 +3574,4 @@ private enum SSPhotoViewerMediaLoader {
         }
     }
 
-    private static func downsampledImage(
-        data: Data,
-        maxPixelSize: Int
-    ) -> CGImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
-            return nil
-        }
-
-        return CGImageSourceCreateThumbnailAtIndex(
-            source,
-            0,
-            [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-                kCGImageSourceCreateThumbnailWithTransform: true
-            ] as CFDictionary
-        )
-    }
-}
-
-/// A bounded on-device data cache beneath the decoded-image NSCache.
-private actor SSPhotoViewerDiskImageCache {
-    static let shared = SSPhotoViewerDiskImageCache()
-    private static let maximumBytes = 256 * 1024 * 1024
-    private static let directoryName = "SSPhotoViewer.Images"
-
-    private static var directoryURL: URL {
-        let base = FileManager.default.urls(
-            for: .cachesDirectory,
-            in: .userDomainMask
-        )[0]
-        return base.appendingPathComponent(directoryName, isDirectory: true)
-    }
-
-    func data(for url: URL) -> Data? {
-        let fileURL = Self.fileURL(for: url)
-        return try? Data(contentsOf: fileURL, options: [.mappedIfSafe])
-    }
-
-    func store(_ data: Data, for url: URL) {
-        let directory = Self.directoryURL
-        do {
-            try FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true
-            )
-            try data.write(to: Self.fileURL(for: url), options: .atomic)
-            Self.pruneIfNeeded(in: directory)
-        } catch {
-            // Disk caching is opportunistic; memory and network loading remain
-            // the source of truth when the device cache is unavailable.
-        }
-    }
-
-    func removeAll() {
-        try? FileManager.default.removeItem(at: Self.directoryURL)
-    }
-
-    private static func fileURL(for url: URL) -> URL {
-        let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
-        return directoryURL.appendingPathComponent(digest).appendingPathExtension("data")
-    }
-
-    private static func pruneIfNeeded(in directory: URL) {
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
-
-        let entries = files.compactMap { file -> (URL, Int, Date)? in
-            guard let values = try? file.resourceValues(
-                forKeys: [.fileSizeKey, .contentModificationDateKey]
-            ), let size = values.fileSize else { return nil }
-            return (file, size, values.contentModificationDate ?? .distantPast)
-        }
-        var total = entries.reduce(0) { $0 + $1.1 }
-        for (file, size, _) in entries.sorted(by: { $0.2 < $1.2 }) {
-            guard total > maximumBytes else { break }
-            try? FileManager.default.removeItem(at: file)
-            total -= size
-        }
-    }
-}
-
-@MainActor
-private enum SSPhotoViewerImageCache {
-    static let images: NSCache<NSURL, UIImage> = {
-        let cache = NSCache<NSURL, UIImage>()
-        cache.countLimit = 128
-        cache.totalCostLimit = 128 * 1024 * 1024
-        return cache
-    }()
 }

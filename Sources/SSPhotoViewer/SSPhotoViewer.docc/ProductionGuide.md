@@ -1,6 +1,7 @@
 # Production Guide
 
-Integrate SSPhotoViewer with large datasets, real networking, accessibility, and GitHub distribution.
+Integrate SSPhotoViewer with large datasets, app-owned media pipelines,
+accessibility, and GitHub distribution.
 
 ## Large collections
 
@@ -19,24 +20,21 @@ Remaining costs are primarily:
 Use small thumbnails, paged full media, stable IDs, and lazy home layouts. Avoid
 rebuilding transformed arrays inside custom chrome on every strip movement.
 
-## Caching
+## Media loading and caching
 
-The package caches decoded images and uses shared URL caching. This improves
-preview/fullscreen reuse and transition readiness. ``SSPhotoViewerCache/reset()``
-exists for deterministic cold-cache tests, not normal presentation lifecycle.
+The package is a viewer, not a networking or image-cache layer. Provide an
+app-owned ``SSPhotoViewerImageLoader`` through the configuration. The app owns
+authorization, URL signing, decoding resolution, memory/disk caching, retry,
+freshness, and invalid-response handling. If no image loader is provided,
+URL-backed image and poster surfaces remain placeholders; the package performs
+no implicit image request.
 
-Do not clear caches:
+## App-owned media pipeline
 
-- when a source is tapped;
-- when the viewer appears or disappears;
-- when the strip scrolls;
-- whenever a page changes.
-
-## Networking
-
-The model accepts URLs and does not prescribe a networking repository. Produce
-stable domain items after authorization and URL signing. If signed URLs rotate,
-preserve item ID so selection and source identity remain coherent.
+The model carries stable media identity and URLs as metadata, but acquisition is
+app-owned. Produce stable domain items after authorization and URL signing. If
+signed URLs rotate, preserve item ID so selection and source identity remain
+coherent.
 
 The page loader is async and nonthrowing. Translate transport failures into app
 retry policy. A loader can retain `hasMore: true` after a temporary failure so a

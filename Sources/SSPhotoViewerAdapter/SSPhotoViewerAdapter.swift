@@ -7,6 +7,8 @@ import SSPhotoViewer
 /// This alias keeps consuming apps on the public adapter boundary; they do not
 /// need to import the lower-level ``SSPhotoViewer`` target.
 public typealias ImageViewerSourceReadiness = SSPhotoViewerSourceReadiness
+/// Adapter-facing hook for authenticated or app-owned image loading.
+public typealias ImageViewerImageLoader = SSPhotoViewerImageLoader
 
 /// App-facing media resources. The adapter converts these to package media.
 public enum ImageViewerMedia: @unchecked Sendable, Hashable {
@@ -150,6 +152,7 @@ public struct ImageViewerPage<Asset: ImageViewerAsset> {
 /// The app chooses this policy once at the composition boundary. Chat and
 /// gallery views do not import or construct ``SSPhotoViewerConfiguration``.
 public struct ImageViewerPresentationPolicy<Asset: ImageViewerAsset> {
+    public var imageLoader: ImageViewerImageLoader?
     public var presentationStyle: ImageViewerPresentationStyle
     public var fallbackDestination: ImageViewerFallbackDestination
     public var initialDisplayMode: ImageViewerDisplayMode
@@ -162,6 +165,7 @@ public struct ImageViewerPresentationPolicy<Asset: ImageViewerAsset> {
     public var onAction: (ImageViewerAction) -> Void
 
     public init(
+        imageLoader: ImageViewerImageLoader? = nil,
         presentationStyle: ImageViewerPresentationStyle = .sameHierarchy,
         fallbackDestination: ImageViewerFallbackDestination = .source,
         initialDisplayMode: ImageViewerDisplayMode = .minimal,
@@ -173,6 +177,7 @@ public struct ImageViewerPresentationPolicy<Asset: ImageViewerAsset> {
         pageLoader: ((Int) async -> ImageViewerPage<Asset>)? = nil,
         onAction: @escaping (ImageViewerAction) -> Void = { _ in }
     ) {
+        self.imageLoader = imageLoader
         self.presentationStyle = presentationStyle
         self.fallbackDestination = fallbackDestination
         self.initialDisplayMode = initialDisplayMode
@@ -199,6 +204,7 @@ public struct ImageViewerPresentationPolicy<Asset: ImageViewerAsset> {
 
         return SSPhotoViewerConfiguration(
             pageLoader: packagePageLoader,
+            imageLoader: imageLoader,
             fallbackDestination: fallbackDestination.ssPhotoViewerDestination,
             initialDisplayMode: initialDisplayMode.ssPhotoViewerMode,
             showsDefaultTopBar: showsDefaultTopBar,

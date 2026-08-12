@@ -846,9 +846,12 @@ frame rather than the frame captured at presentation.
 
 The viewer does not render every loaded item. The fullscreen pager keeps only
 the selected page and immediate neighbors in the active page window. The strip
-uses a lazy stack, decoded images use a memory cache backed by a bounded on-device
-disk cache, and pagination is
+uses a lazy stack, and pagination is
 append-only with an incremental ID-to-index map.
+
+The package does not download, decode, or cache images. Supply `imageLoader` in
+the viewer policy/configuration and let the app's media pipeline own networking,
+authorization, decoding, caching, retries, and freshness.
 
 For 1,000+ media items:
 
@@ -857,7 +860,6 @@ For 1,000+ media items:
 - Return pages rather than replacing the entire viewer array repeatedly.
 - Keep home in `List`, `LazyVStack`, or `LazyVGrid`.
 - Avoid expensive work in custom chrome `body` implementations.
-- Do not clear `SSPhotoViewerCache` during scrolling or presentation.
 - Profile your real CDN images and video bitrates; sequence size alone is not
   usually the dominant memory cost.
 
@@ -870,22 +872,39 @@ For 1,000+ media items:
 - Keep custom control hit targets near 44×44 points or larger.
 - Test VoiceOver order and accessibility Dynamic Type sizes in every custom bar.
 
-## Cache control
+## Media loading
 
-`SSPhotoViewerCache.reset()` clears decoded image, on-device image data, and URL
-response caches. It is
-intended for deterministic tests and sample apps:
+The viewer is intentionally not a network client. Configure an app-owned
+loader, for example one backed by Nuke, Kingfisher, Photos, local files, or an
+authenticated URLSession:
 
 ```swift
-@main
-struct DemoApp: App {
-    init() {
-        SSPhotoViewerCache.reset() // once, only for a deliberate cold run
+let policy = ImageViewerPresentationPolicy<AppImage>(
+    imageLoader: { url in
+        await appImagePipeline.image(for: url)
     }
-}
+)
 ```
 
-Do not call it on every presentation in production.
+The loader returns the decoded `UIImage` the viewer should display. The app
+controls full-resolution policy and can return a thumbnail first, then update
+its own pipeline as needed. If no loader is supplied, URL-backed image and
+poster surfaces remain placeholders; no implicit network request occurs.
+
+For advanced video pipelines, provide an already-configured `AVAsset` instead
+of a URL:
+
+```swift
+let asset = AVURLAsset(url: signedVideoURL)
+let item = SSPhotoViewerItem(
+    id: video.id,
+    media: .videoAsset(asset, posterURL: posterURL)
+)
+```
+
+The viewer creates and owns the `AVPlayer` lifecycle and controls. The app owns
+how the asset is constructed, including authentication or custom resource
+loading.
 
 For advanced video pipelines, provide an already-configured `AVAsset` instead
 of a URL:
