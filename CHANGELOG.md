@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Documented that an app-owned image loader is required for URL-backed image
+  and poster content; the package intentionally provides no universal default.
 - Lowered the package tools requirement to Swift 5.10 so it can be adopted by
   projects that have not yet moved to Swift tools 6.
 - Kept SSPhotoViewer focused on viewing and interaction: image networking,
