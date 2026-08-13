@@ -9,6 +9,8 @@ import SSPhotoViewer
 public typealias ImageViewerSourceReadiness = SSPhotoViewerSourceReadiness
 /// Adapter-facing hook for authenticated or app-owned image loading.
 public typealias ImageViewerImageLoader = SSPhotoViewerImageLoader
+/// App-facing synchronous memory lookup used to seed handoff visuals.
+public typealias ImageViewerCachedImageLookup = SSPhotoViewerCachedImageLookup
 
 /// App-facing media resources. The adapter converts these to package media.
 public enum ImageViewerMedia: @unchecked Sendable, Hashable {
@@ -156,6 +158,8 @@ public struct ImageViewerPresentationPolicy<Asset: ImageViewerAsset> {
     /// loader because media authorization, caching, and decoding are app policy.
     /// `nil` is retained only for placeholder-only integrations.
     public var imageLoader: ImageViewerImageLoader?
+    /// Optional app-owned memory-only lookup. The adapter does not cache.
+    public var cachedImageLookup: ImageViewerCachedImageLookup?
     public var presentationStyle: ImageViewerPresentationStyle
     public var fallbackDestination: ImageViewerFallbackDestination
     public var initialDisplayMode: ImageViewerDisplayMode
@@ -169,6 +173,7 @@ public struct ImageViewerPresentationPolicy<Asset: ImageViewerAsset> {
 
     public init(
         imageLoader: ImageViewerImageLoader? = nil,
+        cachedImageLookup: ImageViewerCachedImageLookup? = nil,
         presentationStyle: ImageViewerPresentationStyle = .sameHierarchy,
         fallbackDestination: ImageViewerFallbackDestination = .source,
         initialDisplayMode: ImageViewerDisplayMode = .minimal,
@@ -181,6 +186,7 @@ public struct ImageViewerPresentationPolicy<Asset: ImageViewerAsset> {
         onAction: @escaping (ImageViewerAction) -> Void = { _ in }
     ) {
         self.imageLoader = imageLoader
+        self.cachedImageLookup = cachedImageLookup
         self.presentationStyle = presentationStyle
         self.fallbackDestination = fallbackDestination
         self.initialDisplayMode = initialDisplayMode
@@ -208,6 +214,7 @@ public struct ImageViewerPresentationPolicy<Asset: ImageViewerAsset> {
         return SSPhotoViewerConfiguration(
             pageLoader: packagePageLoader,
             imageLoader: imageLoader,
+            cachedImageLookup: cachedImageLookup,
             fallbackDestination: fallbackDestination.ssPhotoViewerDestination,
             initialDisplayMode: initialDisplayMode.ssPhotoViewerMode,
             showsDefaultTopBar: showsDefaultTopBar,

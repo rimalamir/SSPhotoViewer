@@ -208,6 +208,7 @@ final class SSPhotoViewerTests: XCTestCase {
         XCTAssertNil(configuration.bottomBarBuilder)
         XCTAssertNil(configuration.videoControlsBuilder)
         XCTAssertNil(configuration.imageLoader)
+        XCTAssertNil(configuration.cachedImageLookup)
     }
 
     func testTypedBuilderModifiersInstallEveryCustomChromeBuilder() {
@@ -283,6 +284,17 @@ final class SSPhotoViewerTests: XCTestCase {
         )
         let configuration = policy.makeConfiguration()
         let resolved = await configuration.imageLoader?(imageURL)
+
+        XCTAssertTrue(resolved === expected)
+    }
+
+    func testAdapterExposesTheAppOwnedCachedImageLookupBoundary() {
+        let expected = UIImage()
+        let policy = ImageViewerPresentationPolicy<AdapterAsset>(
+            cachedImageLookup: { _ in expected }
+        )
+        let configuration = policy.makeConfiguration()
+        let resolved = configuration.cachedImageLookup?(imageURL)
 
         XCTAssertTrue(resolved === expected)
     }

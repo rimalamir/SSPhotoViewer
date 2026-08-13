@@ -497,6 +497,13 @@ public typealias SSPhotoViewerPageLoader = (Int) async -> SSPhotoViewerPage
 /// cache, decoding policy, or signed-request refresh at this boundary.
 public typealias SSPhotoViewerImageLoader = (URL) async -> UIImage?
 
+/// Performs an app-owned, memory-only lookup used to seed a transition.
+///
+/// The package does not cache, retain, evict, decode, or fetch through this
+/// closure. The returned image is only a transient render seed; the async
+/// loader remains responsible for the authoritative media value.
+public typealias SSPhotoViewerCachedImageLookup = (URL) -> UIImage?
+
 /// Builds media-aware top or bottom chrome.
 public typealias SSPhotoViewerChromeBuilder = (SSPhotoViewerChromeContext) -> AnyView
 
@@ -513,6 +520,9 @@ public struct SSPhotoViewerConfiguration {
     /// maintain an image cache; return the decoded image from the app's media
     /// pipeline, including authorization and caching as needed.
     public var imageLoader: SSPhotoViewerImageLoader?
+    /// Optional app-owned memory lookup used to avoid a blank opening frame.
+    /// This is not a package cache and must not perform I/O.
+    public var cachedImageLookup: SSPhotoViewerCachedImageLookup?
     /// Extends the viewer sequence as paging or the thumbnail strip approaches
     /// the current boundary.
     ///
@@ -568,6 +578,7 @@ public struct SSPhotoViewerConfiguration {
     public init(
         pageLoader: SSPhotoViewerPageLoader? = nil,
         imageLoader: SSPhotoViewerImageLoader? = nil,
+        cachedImageLookup: SSPhotoViewerCachedImageLookup? = nil,
         fallbackDestination: SSPhotoViewerFallbackDestination = .source,
         initialDisplayMode: SSPhotoViewerDisplayMode = .minimal,
         showsDefaultTopBar: Bool = true,
@@ -584,6 +595,7 @@ public struct SSPhotoViewerConfiguration {
     ) {
         self.pageLoader = pageLoader
         self.imageLoader = imageLoader
+        self.cachedImageLookup = cachedImageLookup
         self.fallbackDestination = fallbackDestination
         self.initialDisplayMode = initialDisplayMode
         self.showsDefaultTopBar = showsDefaultTopBar
@@ -953,6 +965,8 @@ public struct SSPhotoViewerStrip: View {
     /// The strip never performs implicit networking or caching. When this is
     /// `nil`, URL-backed thumbnail surfaces remain placeholders.
     public var imageLoader: SSPhotoViewerImageLoader?
+    /// Optional app-owned memory-only lookup for immediate thumbnail seeding.
+    public var cachedImageLookup: SSPhotoViewerCachedImageLookup?
 
     private let thumbnailHeight: CGFloat
     private let spacing: CGFloat
@@ -967,7 +981,8 @@ public struct SSPhotoViewerStrip: View {
         thumbnailHeight: CGFloat = 40,
         spacing: CGFloat = 1,
         onRequestNextPage: (() -> Void)? = nil,
-        imageLoader: SSPhotoViewerImageLoader? = nil
+        imageLoader: SSPhotoViewerImageLoader? = nil,
+        cachedImageLookup: SSPhotoViewerCachedImageLookup? = nil
     ) {
         self.items = items
         _selectedIndex = selectedIndex
@@ -975,6 +990,7 @@ public struct SSPhotoViewerStrip: View {
         self.spacing = max(0, spacing)
         self.onRequestNextPage = onRequestNextPage
         self.imageLoader = imageLoader
+        self.cachedImageLookup = cachedImageLookup
     }
 
     public var body: some View {
@@ -995,7 +1011,8 @@ public struct SSPhotoViewerStrip: View {
                         } label: {
                             SSPhotoViewerThumbnailSurface(
                                 item: item,
-                                imageLoader: imageLoader
+                                imageLoader: imageLoader,
+                                cachedImageLookup: cachedImageLookup
                             )
                                 .frame(
                                     width: thumbnailHeight * 12 / 16,

@@ -44,6 +44,7 @@ struct SSPhotoViewerMediaPage: View {
     let onReady: () -> Void
     let interactiveOffset: CGSize
     let imageLoader: SSPhotoViewerImageLoader?
+    let cachedImageLookup: SSPhotoViewerCachedImageLookup?
 
     @GestureState private var pinchBaseline: PinchBaseline?
     @State private var mediaReady = false
@@ -99,6 +100,7 @@ struct SSPhotoViewerMediaPage: View {
                     // keep one stable, zoom-independent control surface.
                     showsPlaybackControls: false,
                     imageLoader: imageLoader,
+                    cachedImageLookup: cachedImageLookup,
                     onReady: {
                         mediaReady = true
                         onReady()
@@ -370,14 +372,22 @@ struct SSPhotoViewerVideoControls: View {
 struct SSPhotoViewerThumbnailSurface: View {
     let item: SSPhotoViewerItem
     let imageLoader: SSPhotoViewerImageLoader?
+    let cachedImageLookup: SSPhotoViewerCachedImageLookup?
     @State private var image: UIImage?
 
     init(
         item: SSPhotoViewerItem,
-        imageLoader: SSPhotoViewerImageLoader? = nil
+        imageLoader: SSPhotoViewerImageLoader? = nil,
+        cachedImageLookup: SSPhotoViewerCachedImageLookup? = nil
     ) {
         self.item = item
         self.imageLoader = imageLoader
+        self.cachedImageLookup = cachedImageLookup
+        _image = State(
+            initialValue: item.preferredThumbnailURL.flatMap {
+                cachedImageLookup?($0)
+            }
+        )
     }
 
     var body: some View {
@@ -457,6 +467,7 @@ struct SSPhotoViewerMediaSurface: View {
     let usesThumbnailVisual: Bool
     let showsPlaybackControls: Bool
     let imageLoader: SSPhotoViewerImageLoader?
+    let cachedImageLookup: SSPhotoViewerCachedImageLookup?
     let requiresAuthoritativeAspectRatio: Bool
     var onReady: (() -> Void)? = nil
     var onPlayerReady: ((AVPlayer) -> Void)? = nil
@@ -474,6 +485,7 @@ struct SSPhotoViewerMediaSurface: View {
         usesThumbnailVisual: Bool = false,
         showsPlaybackControls: Bool = true,
         imageLoader: SSPhotoViewerImageLoader? = nil,
+        cachedImageLookup: SSPhotoViewerCachedImageLookup? = nil,
         requiresAuthoritativeAspectRatio: Bool = false,
         onReady: (() -> Void)? = nil,
         onPlayerReady: ((AVPlayer) -> Void)? = nil,
@@ -487,12 +499,27 @@ struct SSPhotoViewerMediaSurface: View {
         self.usesThumbnailVisual = usesThumbnailVisual
         self.showsPlaybackControls = showsPlaybackControls
         self.imageLoader = imageLoader
+        self.cachedImageLookup = cachedImageLookup
         self.requiresAuthoritativeAspectRatio = requiresAuthoritativeAspectRatio
         self.onReady = onReady
         self.onPlayerReady = onPlayerReady
         self.onAspectRatioReady = onAspectRatioReady
 
-        _image = State(initialValue: nil)
+        let seedURL: URL?
+        if usesThumbnailVisual {
+            seedURL = item.thumbnailURL ?? item.preferredThumbnailURL
+        } else {
+            switch item.media {
+            case .image(let url):
+                seedURL = url
+            case .video(_, let posterURL),
+                 .videoAsset(_, let posterURL):
+                seedURL = item.thumbnailURL ?? posterURL
+            }
+        }
+        _image = State(
+            initialValue: seedURL.flatMap { cachedImageLookup?($0) }
+        )
     }
 
     var body: some View {
@@ -523,10 +550,27 @@ struct SSPhotoViewerMediaSurface: View {
             }
         }
         .task(id: item) {
-            image = nil
             player?.pause()
             player = nil
             didSignalReady = false
+
+            // A cached seed is already rendered at the opening frame. Claim
+            // readiness immediately when its geometry is authoritative; the
+            // async loader below can still refresh the image without creating
+            // a placeholder transaction.
+            if let image,
+               image.size.width > 0,
+               image.size.height > 0 {
+                onAspectRatioReady?(image.size.width / image.size.height)
+                let seedIsAuthoritative = !usesThumbnailVisual
+                    || item.thumbnailURL == nil
+                    || item.aspectRatio != nil
+                    || item.thumbnailPreservesMediaAspectRatio
+                if !requiresAuthoritativeAspectRatio || seedIsAuthoritative {
+                    signalReady()
+                }
+            }
+
             switch item.media {
             case .image(let url):
                 if usesThumbnailVisual, let thumbnailURL = item.thumbnailURL {
