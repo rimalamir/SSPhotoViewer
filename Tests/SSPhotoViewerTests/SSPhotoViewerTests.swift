@@ -96,6 +96,59 @@ final class SSPhotoViewerTests: XCTestCase {
         XCTAssertTrue(page.hasMore)
     }
 
+    func testItemReconciliationReplacesExistingPositionAndReportsIt() {
+        let previous = SSPhotoViewerItem(
+            id: "photo",
+            media: .image(imageURL),
+            aspectRatio: 4.0 / 3.0
+        )
+        let replacement = SSPhotoViewerItem(
+            id: "photo",
+            media: .image(URL(string: "https://example.com/full-2.jpg")!),
+            aspectRatio: 16.0 / 9.0
+        )
+
+        let result = SSPhotoViewerItemReconciliation.apply(
+            incoming: [replacement],
+            to: [previous]
+        )
+
+        XCTAssertEqual(result.items, [replacement])
+        XCTAssertEqual(result.replacements.count, 1)
+        XCTAssertEqual(result.replacements[0].index, 0)
+        XCTAssertEqual(result.replacements[0].previous, previous)
+        XCTAssertEqual(result.replacements[0].incoming, replacement)
+    }
+
+    func testItemReconciliationAppendsOnlyNewIDs() {
+        let first = SSPhotoViewerItem(id: "first", media: .image(imageURL))
+        let second = SSPhotoViewerItem(id: "second", media: .image(thumbnailURL))
+
+        let result = SSPhotoViewerItemReconciliation.apply(
+            incoming: [first, second, second],
+            to: [first]
+        )
+
+        XCTAssertEqual(result.items, [first, second])
+        XCTAssertTrue(result.replacements.isEmpty)
+    }
+
+    func testItemReconciliationBuildsDeterministicIDMap() {
+        let first = SSPhotoViewerItem(id: "first", media: .image(imageURL))
+        let duplicateID = SSPhotoViewerItem(
+            id: "first",
+            media: .image(thumbnailURL)
+        )
+        let second = SSPhotoViewerItem(id: "second", media: .image(videoURL))
+
+        XCTAssertEqual(
+            SSPhotoViewerItemReconciliation.indexMap(
+                for: [first, duplicateID, second]
+            ),
+            ["first": 0, "second": 2]
+        )
+    }
+
     func testSourceReadinessContractHasConservativeDefaultStates() {
         XCTAssertNotEqual(
             SSPhotoViewerSourceReadiness.unknown,

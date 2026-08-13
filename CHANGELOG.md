@@ -4,6 +4,14 @@
 
 ### Changed
 
+- Split the implementation into focused public-host, pager/gesture,
+  media-rendering, and reconciliation components without changing the viewer's
+  presentation or interaction contract.
+- Added regression coverage for in-place item replacement, duplicate-ID append
+  handling, and deterministic ID-index mapping.
+- Reconciled in-place viewer item replacements while a presentation is active,
+  including resetting stale zoom/player state and restarting media tasks when a
+  host replaces content at an existing index.
 - Prevented the opening hero from resizing after the thumbnail handoff. The
   opening now uses an explicitly ratio-preserving thumbnail or waits for the
   authoritative full-image geometry before animating.

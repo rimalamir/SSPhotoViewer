@@ -132,8 +132,11 @@ cancels that stale request and preserves the newer cursor. The repository should
 still coalesce or make page requests idempotent because eager and viewer paths
 can reach the same boundary concurrently before state propagation completes.
 
-External item updates are append-only for an active presentation. To replace,
-remove, or reorder the viewer sequence, dismiss and present a new sequence.
+External item replacements are supported for an active presentation. A
+replacement resets the affected page's interaction state and restarts its
+media task, including when the stable ID is unchanged. Removing or reordering
+the viewer sequence is still not supported during an active presentation;
+dismiss and present a new sequence for those operations.
 
 ## Custom strip data
 
