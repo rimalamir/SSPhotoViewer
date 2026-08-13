@@ -461,7 +461,8 @@ struct SSPhotoViewer: View {
                         finishOpeningIfReady()
                     },
                     interactiveOffset: index == selectedIndex ? liveZoomPanOffset : .zero,
-                    imageLoader: configuration.imageLoader
+                    imageLoader: configuration.imageLoader,
+                    cachedImageLookup: configuration.cachedImageLookup
                 )
                 // Include the complete value, not only the stable ID. A host
                 // can replace the media at an existing index; changing the
@@ -1236,7 +1237,8 @@ struct SSPhotoViewer: View {
                                 } label: {
                                     SSPhotoViewerThumbnailSurface(
                                         item: item,
-                                        imageLoader: configuration.imageLoader
+                                        imageLoader: configuration.imageLoader,
+                                        cachedImageLookup: configuration.cachedImageLookup
                                     )
                                         .frame(
                                             width: thumbnailWidth(
@@ -1483,13 +1485,14 @@ struct SSPhotoViewer: View {
         _ state: ReturnFrame,
         screen: CGRect
     ) -> some View {
-        SSPhotoViewerMediaSurface(
+            SSPhotoViewerMediaSurface(
             item: state.item,
             imageContentMode: .fill,
             placeholderColor: .clear,
             usesStaticVisual: true,
             usesThumbnailVisual: true,
-            imageLoader: configuration.imageLoader
+            imageLoader: configuration.imageLoader,
+            cachedImageLookup: configuration.cachedImageLookup
         ) {
             completeReturnHero()
         }
@@ -1514,6 +1517,7 @@ struct SSPhotoViewer: View {
             usesStaticVisual: true,
             usesThumbnailVisual: true,
             imageLoader: configuration.imageLoader,
+            cachedImageLookup: configuration.cachedImageLookup,
             requiresAuthoritativeAspectRatio: true,
             onReady: {
                 guard isOpening, !openingHeroReady else { return }

@@ -906,6 +906,24 @@ controls full-resolution policy and can return a thumbnail first, then update
 its own pipeline as needed. The package has no fallback loader; if it is not
 provided, URL-backed image and poster surfaces remain placeholders.
 
+To remove a one-frame opening gap when the source image is already in the
+app's memory cache, optionally provide a synchronous memory-only lookup:
+
+```swift
+let policy = ImageViewerPresentationPolicy<AppImage>(
+    imageLoader: { url in
+        await appImagePipeline.image(for: url)
+    },
+    cachedImageLookup: { url in
+        appImagePipeline.memoryImage(for: url)
+    }
+)
+```
+
+`cachedImageLookup` must not perform I/O, networking, decoding, or cache
+management. It only gives the viewer a borrowed `UIImage` to seed the handoff;
+the consuming app remains the owner of the cache and its eviction policy.
+
 For advanced video pipelines, provide an already-configured `AVAsset` instead
 of a URL:
 
