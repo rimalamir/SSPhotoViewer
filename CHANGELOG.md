@@ -4,6 +4,11 @@
 
 ### Changed
 
+- Split the implementation into focused public-host, pager/gesture,
+  media-rendering, and reconciliation components without changing the viewer's
+  presentation or interaction contract.
+- Added regression coverage for in-place item replacement, duplicate-ID append
+  handling, and deterministic ID-index mapping.
 - Reconciled in-place viewer item replacements while a presentation is active,
   including resetting stale zoom/player state and restarting media tasks when a
   host replaces content at an existing index.
