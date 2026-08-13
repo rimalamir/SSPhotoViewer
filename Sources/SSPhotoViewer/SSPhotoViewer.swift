@@ -1446,27 +1446,8 @@ private struct SSPhotoViewer: View {
                 // triggers the viewer-owned loader.
                 requestNextPageIfNeeded()
             }
-            .onChange(of: items.count) { _, newCount in
-                // A host may feed viewer pages continuously instead of using
-                // pageLoader. Merge append-only additions into the viewer's
-                // local window without replacing its current page state.
-                // Compare the count only: comparing 1,000 Hashable items on
-                // every live strip-selection update is unnecessary work. The
-                // host contract for externally-fed pages is append-only.
-                guard newCount > loadedItems.count else { return }
-
-                var existingIDs = Set(loadedIndexByID.keys)
-                let fresh = items.dropFirst(loadedItems.count).filter {
-                    existingIDs.insert($0.id).inserted
-                }
-                guard !fresh.isEmpty else { return }
-
-                let firstFreshIndex = loadedItems.count
-                loadedItems.append(contentsOf: fresh)
-                for (offset, item) in fresh.enumerated() {
-                    loadedIndexByID[item.id] = firstFreshIndex + offset
-                    zoom[item.id] = ZoomState()
-                }
+            .onChange(of: items) { _, newItems in
+                synchronizeExternallySuppliedItems(newItems)
             }
             .onChange(of: paginationCursor) { _, cursor in
                 guard let cursor else { return }
@@ -1497,6 +1478,61 @@ private struct SSPhotoViewer: View {
               activeVideoPlayerID == currentItem?.id
         else { return nil }
         return activeVideoPlayer
+    }
+
+    private func synchronizeExternallySuppliedItems(
+        _ newItems: [SSPhotoViewerItem]
+    ) {
+        // The host normally appends pages, but it may also replace an item in
+        // place while an app-owned image loader resolves a newer rendition.
+        // Reconcile overlapping positions as well as appends so a page cannot
+        // keep rendering the previous media value for the same index.
+        let overlap = min(newItems.count, loadedItems.count)
+        var didReplaceCurrentItem = false
+
+        for index in 0..<overlap {
+            let incoming = newItems[index]
+            guard loadedItems[index] != incoming else { continue }
+
+            let previous = loadedItems[index]
+            loadedItems[index] = incoming
+            zoom[previous.id] = ZoomState()
+            zoom[incoming.id] = ZoomState()
+            resolvedAspectRatios.removeValue(forKey: previous.id)
+            resolvedAspectRatios.removeValue(forKey: incoming.id)
+
+            if index == selectedIndex {
+                didReplaceCurrentItem = true
+            }
+        }
+
+        if newItems.count > loadedItems.count {
+            var knownIDs = Set(loadedItems.map(\.id))
+            let fresh = newItems.dropFirst(loadedItems.count).filter {
+                knownIDs.insert($0.id).inserted
+            }
+            loadedItems.append(contentsOf: fresh)
+            for item in fresh {
+                zoom[item.id] = ZoomState()
+            }
+        }
+
+        loadedIndexByID = Dictionary(
+            loadedItems.enumerated().map { ($0.element.id, $0.offset) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        guard didReplaceCurrentItem else { return }
+
+        // A replaced current video must relinquish playback immediately. The
+        // replacement page gets a fresh identity below and will create its own
+        // player only after it becomes current.
+        activeVideoPlayer?.pause()
+        activeVideoPlayer = nil
+        activeVideoPlayerID = nil
+        fullscreenMediaReadyID = nil
+        liveZoomPanOffset = .zero
+        lastPanTranslation = .zero
     }
 
     private func chromeContext(
@@ -1634,7 +1670,11 @@ private struct SSPhotoViewer: View {
                     interactiveOffset: index == selectedIndex ? liveZoomPanOffset : .zero,
                     imageLoader: configuration.imageLoader
                 )
-                .id(item.id)
+                // Include the complete value, not only the stable ID. A host
+                // can replace the media at an existing index; changing the
+                // view identity tears down the old image/player task and
+                // prevents stale content from surviving that replacement.
+                .id(item)
                 .frame(width: size.width, height: size.height)
                 .scaleEffect(
                     index == selectedIndex
@@ -3282,7 +3322,8 @@ private struct SSPhotoViewerThumbnailSurface: View {
                 }
             }
         }
-        .task(id: item.id) {
+        .task(id: item) {
+            image = nil
             if let thumbnailURL = item.thumbnailURL {
                 image = await imageLoader?(thumbnailURL)
             } else {
@@ -3403,7 +3444,11 @@ private struct SSPhotoViewerMediaSurface: View {
                 }
             }
         }
-        .task(id: item.id) {
+        .task(id: item) {
+            image = nil
+            player?.pause()
+            player = nil
+            didSignalReady = false
             switch item.media {
             case .image(let url):
                 if usesThumbnailVisual, let thumbnailURL = item.thumbnailURL {

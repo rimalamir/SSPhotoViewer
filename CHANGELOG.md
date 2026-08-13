@@ -4,6 +4,9 @@
 
 ### Changed
 
+- Reconciled in-place viewer item replacements while a presentation is active,
+  including resetting stale zoom/player state and restarting media tasks when a
+  host replaces content at an existing index.
 - Prevented the opening hero from resizing after the thumbnail handoff. The
   opening now uses an explicitly ratio-preserving thumbnail or waits for the
   authoritative full-image geometry before animating.

@@ -574,9 +574,10 @@ let configuration = SSPhotoViewerConfiguration(
 ```
 
 The caller may also push eagerly loaded media into an already-presented viewer.
-Append to the `viewerItems` passed to `SSPhotoViewerHost`; SwiftUI delivers the
-new value and the package merges the append-only suffix immediately. There is
-no polling loop.
+Append to, or replace an existing position in, the `viewerItems` passed to
+`SSPhotoViewerHost`; SwiftUI delivers the new value and the package reconciles
+the changed positions without leaving stale image or video state behind. There
+is no polling loop.
 
 When eager push and viewer-driven pull are both enabled, also pass a cursor so
 the viewer does not request pages the repository has already accepted:
@@ -856,7 +857,9 @@ frame rather than the frame captured at presentation.
 The viewer does not render every loaded item. The fullscreen pager keeps only
 the selected page and immediate neighbors in the active page window. The strip
 uses a lazy stack, and pagination is
-append-only with an incremental ID-to-index map.
+appends pages while maintaining an incremental ID-to-index map. Replacing an
+existing item also rebuilds that map and resets the affected page's interaction
+state.
 
 The package does not download, decode, or cache images. Supply `imageLoader` in
 the viewer policy/configuration before presenting URL-backed media. There is no
